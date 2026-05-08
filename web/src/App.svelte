@@ -1,25 +1,37 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import Map from './Map.svelte';
+  import SourcePanel from './SourcePanel.svelte';
+  import type { FlowBundle } from './types';
 
   const buildDate = new Date(__BUILD_DATE__).toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
   });
+
+  let flowBundle = $state<FlowBundle | null>(null);
+
+  onMount(async () => {
+    const res = await fetch('/data/flows/2025-10.json');
+    flowBundle = await res.json();
+  });
 </script>
 
 <div class="app">
-  <Map />
+  <Map {flowBundle} />
 
   <header class="overlay-header">
     <h1>Where's the Money?</h1>
     <p class="tagline">Every pound of Kent payroll, traced to where it goes.</p>
   </header>
 
+  <SourcePanel source={flowBundle?.source ?? null} />
+
   <footer class="overlay-footer">
     <span class="deploy-date">Deployed {buildDate}</span>
     <span class="separator">·</span>
-    <span class="status-pill">Milestone 2 — geographic skeleton</span>
+    <span class="status-pill">Milestone 3 — PAYE RTI choropleth</span>
   </footer>
 </div>
 
@@ -47,7 +59,6 @@
     height: 100%;
   }
 
-  /* Ensure MapLibre controls don't bleed outside our color scheme */
   :global(.maplibregl-ctrl-group) {
     background: rgba(10, 10, 20, 0.85) !important;
     border: 1px solid rgba(124, 131, 255, 0.2) !important;

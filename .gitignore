@@ -1,3 +1,6 @@
+# Notes
+plan.md
+
 # Python
 __pycache__/
 *.py[cod]
@@ -7,9 +10,11 @@ dist/
 .uv/
 
 # Data lake — large files not in version control
-data/*.parquet
-data/*.duckdb
-# Keep fixtures
+data/**/*.parquet
+data/**/*.duckdb
+data/**/*.json
+# Keep root-level reference files and fixtures
+!data/kent_medway_lad_boundaries.geojson
 !data/fixtures/
 
 # Node
