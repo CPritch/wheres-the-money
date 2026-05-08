@@ -7,12 +7,13 @@ export default defineConfig({
     __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
   },
   build: {
-    // MapLibre GL JS is ~1MB minified — expected, not a mistake
-    chunkSizeWarningLimit: 1100,
+    // MapLibre ~1MB, Three.js WebGPU ~2MB — both expected
+    chunkSizeWarningLimit: 2200,
     rollupOptions: {
       output: {
         manualChunks: {
           maplibre: ['maplibre-gl'],
+          three: ['three/webgpu', 'three/tsl'],
         },
       },
     },

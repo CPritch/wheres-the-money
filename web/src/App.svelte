@@ -31,7 +31,7 @@
   <footer class="overlay-footer">
     <span class="deploy-date">Deployed {buildDate}</span>
     <span class="separator">·</span>
-    <span class="status-pill">Milestone 3 — PAYE RTI choropleth</span>
+    <span class="status-pill">Milestone 4 — particle simulation</span>
   </footer>
 </div>
 
