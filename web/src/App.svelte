@@ -1,25 +1,27 @@
 <script lang="ts">
-  declare const __BUILD_DATE__: string;
+  import Map from './Map.svelte';
 
-  const buildDate = new Date(__BUILD_DATE__).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
+  const buildDate = new Date(__BUILD_DATE__).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
   });
 </script>
 
-<main>
-  <div class="hero">
+<div class="app">
+  <Map />
+
+  <header class="overlay-header">
     <h1>Where's the Money?</h1>
-    <p class="tagline">
-      Every pound of Kent payroll, traced to where it goes.
-    </p>
-    <p class="status">
-      Coming soon — visualisation in progress.
-    </p>
-    <p class="deploy-date">Deployed {buildDate}</p>
-  </div>
-</main>
+    <p class="tagline">Every pound of Kent payroll, traced to where it goes.</p>
+  </header>
+
+  <footer class="overlay-footer">
+    <span class="deploy-date">Deployed {buildDate}</span>
+    <span class="separator">·</span>
+    <span class="status-pill">Milestone 2 — geographic skeleton</span>
+  </footer>
+</div>
 
 <style>
   :global(*) {
@@ -28,65 +30,98 @@
     padding: 0;
   }
 
-  :global(body) {
+  :global(html),
+  :global(body),
+  :global(#app) {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
     background: #0a0a0f;
+    font-family: 'Inter', system-ui, sans-serif;
     color: #e8e8f0;
-    font-family: "Inter", system-ui, sans-serif;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
 
-  main {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    padding: 2rem;
+  .app {
+    position: relative;
+    width: 100%;
+    height: 100%;
   }
 
-  .hero {
-    text-align: center;
-    max-width: 600px;
+  /* Ensure MapLibre controls don't bleed outside our color scheme */
+  :global(.maplibregl-ctrl-group) {
+    background: rgba(10, 10, 20, 0.85) !important;
+    border: 1px solid rgba(124, 131, 255, 0.2) !important;
+    backdrop-filter: blur(6px);
+  }
+
+  :global(.maplibregl-ctrl-group button) {
+    color: #a0a0b8 !important;
+  }
+
+  :global(.maplibregl-ctrl-group button:hover) {
+    background: rgba(124, 131, 255, 0.15) !important;
+    color: #e8e8f0 !important;
+  }
+
+  :global(.maplibregl-ctrl-attrib) {
+    background: rgba(10, 10, 20, 0.7) !important;
+    color: #505068 !important;
+    font-size: 0.6875rem;
+  }
+
+  :global(.maplibregl-ctrl-attrib a) {
+    color: #7c83ff !important;
+  }
+
+  .overlay-header {
+    position: absolute;
+    top: 1.5rem;
+    left: 1.75rem;
+    pointer-events: none;
+    user-select: none;
   }
 
   h1 {
-    font-size: clamp(2.5rem, 8vw, 5rem);
+    font-size: clamp(1.5rem, 3vw, 2.25rem);
     font-weight: 700;
     letter-spacing: -0.02em;
-    line-height: 1.05;
+    line-height: 1.1;
     background: linear-gradient(135deg, #e8e8f0 30%, #7c83ff 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin-bottom: 1.5rem;
   }
 
   .tagline {
-    font-size: 1.15rem;
+    margin-top: 0.35rem;
+    font-size: 0.8125rem;
     font-weight: 300;
-    color: #a0a0b8;
-    margin-bottom: 2.5rem;
-    line-height: 1.6;
+    color: rgba(160, 160, 184, 0.8);
+    letter-spacing: 0.01em;
   }
 
-  .status {
-    display: inline-block;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: #7c83ff;
-    border: 1px solid #7c83ff44;
-    border-radius: 100px;
-    padding: 0.4rem 1rem;
-    margin-bottom: 2rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+  .overlay-footer {
+    position: absolute;
+    bottom: 1rem;
+    left: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.6875rem;
+    color: #404055;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .separator {
+    color: #2a2a38;
+  }
+
+  .status-pill {
+    color: #505068;
   }
 
   .deploy-date {
-    font-size: 0.75rem;
-    color: #505068;
-    margin-top: 1rem;
+    color: #404055;
   }
 </style>
