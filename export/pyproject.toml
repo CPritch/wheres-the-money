@@ -1,0 +1,13 @@
+[project]
+name = "export"
+version = "0.1.0"
+description = "Where's the Money? — DuckDB export pipeline"
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.1",
+    "pyarrow>=16",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

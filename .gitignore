@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+.uv/
+
+# Data lake — large files not in version control
+data/*.parquet
+data/*.duckdb
+# Keep fixtures
+!data/fixtures/
+
+# Node
+node_modules/
+web/node_modules/
+
+# Build outputs
+web/dist/
+web/.svelte-kit/
+
+# Cloudflare
+.wrangler/
+
+# Editor
+.DS_Store
+.vscode/settings.json
+*.swp

@@ -1,0 +1,11 @@
+[project]
+name = "wheres-the-money"
+version = "0.1.0"
+description = "Where's the Money? — monorepo root"
+requires-python = ">=3.12"
+
+[tool.uv.workspace]
+members = ["ingest", "export"]
+
+[tool.uv.sources]
+# workspace-internal cross-deps go here when needed
