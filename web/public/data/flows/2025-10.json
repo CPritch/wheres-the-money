@@ -2,7 +2,7 @@
   "period": "2025-10",
   "period_start": "2025-10-01",
   "period_end": "2025-10-31",
-  "generated_at": "2026-05-08T23:19:42.093740+00:00",
+  "generated_at": "2026-05-09T18:52:23.348799+00:00",
   "source": {
     "source_id": "ons_paye_rti_nsa_la",
     "name": "Earnings and employment from PAYE RTI (non-seasonally adjusted, LA-level)",
@@ -12,6 +12,38 @@
     "fetched_at": "2026-05-08T23:19:38.364638+00:00",
     "license": "OGL3",
     "methodology": "Total payroll is approximated as employee count \u00d7 median monthly pay for each local authority district. Using the median rather than the mean understates the true total for positively-skewed pay distributions. ASHE pay distributions will be used to refine this estimate in Phase 2."
+  },
+  "flow_meta": {
+    "hmrc": {
+      "label": "HMRC",
+      "description": "Income tax + employee National Insurance",
+      "confidence": "modelled",
+      "methodology": "Computed from UK 2025/26 tax bands applied to median monthly pay. Uses median \u00d7 employee count \u2014 understates tax from higher earners due to the positive skew of pay distributions. Income tax: 0% up to \u00a312,570 PA, 20% to \u00a350,270, 40% above. Employee NI: 8% between primary threshold and UEL, 2% above UEL."
+    },
+    "water": {
+      "label": "Water Companies",
+      "description": "Household water supply and sewerage bills",
+      "confidence": "estimated",
+      "methodology": "Estimated as dwelling count \u00d7 average combined household bill (water supply + sewerage, \u00a3480/year for SE England 2025/26). South East Water serves west/central Kent; Southern Water covers east Kent and sewerage across the county. Dwelling counts from MHCLG Live Table 100 (2021/22 estimates)."
+    },
+    "energy": {
+      "label": "Energy Retailers",
+      "description": "Domestic gas and electricity",
+      "confidence": "modelled",
+      "methodology": "Modelled as dwelling count \u00d7 Ofgem default tariff cap Q4 2025 (\u00a31,717/year for a typical dual-fuel household, Oct\u2013Dec 2025). Aggregated to 'UK energy retailers' \u2014 per-supplier market share at LAD level is not available without paid data. This is the principal precision compromise in Phase 1."
+    },
+    "council_tax": {
+      "label": "Council Tax",
+      "description": "District + KCC + police + parish precepts",
+      "confidence": "measured",
+      "methodology": "Band D total council tax 2024/25 from MHCLG Council Tax Statistics (Table CTB), multiplied by dwelling count. Assumes average chargeable dwelling equivalent is near Band D. Splits between district council, KCC, and police precept are stored in the data layer but shown combined in Phase 1."
+    },
+    "unaccounted": {
+      "label": "Unaccounted",
+      "description": "Total payroll minus all traced flows",
+      "confidence": "measured",
+      "methodology": "Arithmetic residual: total payroll estimate minus HMRC, water, energy, and council tax flows. Represents rent/mortgages, food, consumer spending, savings, pension contributions, transport, and everything else not yet traced. This is the honest 'we don't know yet' stream \u2014 expected to be ~60\u201370% of payroll."
+    }
   },
   "lads": [
     {
@@ -24,7 +56,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 118000,
+      "flows": {
+        "hmrc_gbp": 58730007,
+        "income_tax_gbp": 41950005,
+        "employee_ni_gbp": 16780002,
+        "water_gbp": 4720000,
+        "energy_gbp": 16883833,
+        "council_tax_gbp": 19863333,
+        "unaccounted_gbp": 247954836
+      },
+      "flow_thresholds": [
+        0.16869070208728654,
+        0.18224799851076545,
+        0.23074357759225153,
+        0.2877972000410587
+      ]
     },
     {
       "lad_code": "E07000110",
@@ -36,7 +84,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 74000,
+      "flows": {
+        "hmrc_gbp": 38072562,
+        "income_tax_gbp": 27194688,
+        "employee_ni_gbp": 10877875,
+        "water_gbp": 2960000,
+        "energy_gbp": 10588167,
+        "council_tax_gbp": 12401167,
+        "unaccounted_gbp": 163108134
+      },
+      "flow_thresholds": [
+        0.16762452107279693,
+        0.18065670356315278,
+        0.22727390634636319,
+        0.28187332090491657
+      ]
     },
     {
       "lad_code": "E07000107",
@@ -48,7 +112,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 45000,
+      "flows": {
+        "hmrc_gbp": 31052807,
+        "income_tax_gbp": 22180577,
+        "employee_ni_gbp": 8872231,
+        "water_gbp": 1800000,
+        "energy_gbp": 6438750,
+        "council_tax_gbp": 8118750,
+        "unaccounted_gbp": 125334881
+      },
+      "flow_thresholds": [
+        0.17976076555023926,
+        0.19018073742233563,
+        0.2274538451398137,
+        0.27445225993791506
+      ]
     },
     {
       "lad_code": "E07000115",
@@ -60,7 +140,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 52000,
+      "flows": {
+        "hmrc_gbp": 29797204,
+        "income_tax_gbp": 21283717,
+        "employee_ni_gbp": 8513487,
+        "water_gbp": 2080000,
+        "energy_gbp": 7440333,
+        "council_tax_gbp": 9104333,
+        "unaccounted_gbp": 121714045
+      },
+      "flow_thresholds": [
+        0.17513764747944224,
+        0.1873631672221402,
+        0.23109487013508265,
+        0.2846069888421835
+      ]
     },
     {
       "lad_code": "E07000113",
@@ -72,7 +168,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 63000,
+      "flows": {
+        "hmrc_gbp": 27864525,
+        "income_tax_gbp": 19903232,
+        "employee_ni_gbp": 7961293,
+        "water_gbp": 2520000,
+        "energy_gbp": 9014250,
+        "council_tax_gbp": 10510500,
+        "unaccounted_gbp": 119079181
+      },
+      "flow_thresholds": [
+        0.1648901098901099,
+        0.17980237111581163,
+        0.23314477220858212,
+        0.29534132840411303
+      ]
     },
     {
       "lad_code": "E07000105",
@@ -84,7 +196,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 52000,
+      "flows": {
+        "hmrc_gbp": 25931696,
+        "income_tax_gbp": 18522640,
+        "employee_ni_gbp": 7409056,
+        "water_gbp": 2080000,
+        "energy_gbp": 7440333,
+        "council_tax_gbp": 8809667,
+        "unaccounted_gbp": 113394970
+      },
+      "flow_thresholds": [
+        0.16448207955888147,
+        0.17767530540066098,
+        0.2248685736721931,
+        0.28074738228956336
+      ]
     },
     {
       "lad_code": "E07000106",
@@ -96,7 +224,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 63000,
+      "flows": {
+        "hmrc_gbp": 24507424,
+        "income_tax_gbp": 17505303,
+        "employee_ni_gbp": 7002121,
+        "water_gbp": 2520000,
+        "energy_gbp": 9014250,
+        "council_tax_gbp": 10998750,
+        "unaccounted_gbp": 106947872
+      },
+      "flow_thresholds": [
+        0.15915121549237743,
+        0.17551609558690098,
+        0.23405463542501959,
+        0.3054805183375755
+      ]
     },
     {
       "lad_code": "E07000111",
@@ -108,7 +252,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 46000,
+      "flows": {
+        "hmrc_gbp": 27729698,
+        "income_tax_gbp": 19806928,
+        "employee_ni_gbp": 7922771,
+        "water_gbp": 1840000,
+        "energy_gbp": 6581833,
+        "council_tax_gbp": 8375833,
+        "unaccounted_gbp": 109034885
+      },
+      "flow_thresholds": [
+        0.18057627118644065,
+        0.19255838267542966,
+        0.23541939398083403,
+        0.2899629639880027
+      ]
     },
     {
       "lad_code": "E07000116",
@@ -120,7 +280,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 46000,
+      "flows": {
+        "hmrc_gbp": 25223120,
+        "income_tax_gbp": 18016514,
+        "employee_ni_gbp": 7206606,
+        "water_gbp": 1840000,
+        "energy_gbp": 6581833,
+        "council_tax_gbp": 8253167,
+        "unaccounted_gbp": 102368483
+      },
+      "flow_thresholds": [
+        0.17483685908927932,
+        0.18759102368272995,
+        0.23321373328055234,
+        0.2904214757174257
+      ]
     },
     {
       "lad_code": "E07000114",
@@ -132,7 +308,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 57000,
+      "flows": {
+        "hmrc_gbp": 19963724,
+        "income_tax_gbp": 14259803,
+        "employee_ni_gbp": 5703921,
+        "water_gbp": 2280000,
+        "energy_gbp": 8155750,
+        "council_tax_gbp": 9310000,
+        "unaccounted_gbp": 89328787
+      },
+      "flow_thresholds": [
+        0.15471166168304146,
+        0.17238083966429152,
+        0.23558496173472146,
+        0.30773410515815924
+      ]
     },
     {
       "lad_code": "E07000109",
@@ -144,7 +336,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 42000,
+      "flows": {
+        "hmrc_gbp": 21612566,
+        "income_tax_gbp": 15437547,
+        "employee_ni_gbp": 6175019,
+        "water_gbp": 1680000,
+        "energy_gbp": 6009500,
+        "council_tax_gbp": 7136500,
+        "unaccounted_gbp": 92429678
+      },
+      "flow_thresholds": [
+        0.1677105666156202,
+        0.18074713751822363,
+        0.22738003801774467,
+        0.28275830483109554
+      ]
     },
     {
       "lad_code": "E07000108",
@@ -156,7 +364,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 51000,
+      "flows": {
+        "hmrc_gbp": 18473823,
+        "income_tax_gbp": 13195588,
+        "employee_ni_gbp": 5278235,
+        "water_gbp": 2040000,
+        "energy_gbp": 7297250,
+        "council_tax_gbp": 8848500,
+        "unaccounted_gbp": 78212524
+      },
+      "flow_thresholds": [
+        0.16082080455099554,
+        0.1785796864141864,
+        0.242104686745642,
+        0.3191338368272323
+      ]
     },
     {
       "lad_code": "E07000112",
@@ -168,7 +392,23 @@
       "period_end": "2025-10-31",
       "confidence": "measured",
       "source_id": "ons_paye_rti_nsa_la",
-      "fetched_at": "2026-05-08T23:19:38.364638+00:00"
+      "fetched_at": "2026-05-08T23:19:38.364638+00:00",
+      "dwellings": 47000,
+      "flows": {
+        "hmrc_gbp": 17970562,
+        "income_tax_gbp": 12836116,
+        "employee_ni_gbp": 5134446,
+        "water_gbp": 1880000,
+        "energy_gbp": 6724917,
+        "council_tax_gbp": 8044833,
+        "unaccounted_gbp": 76101740
+      },
+      "flow_thresholds": [
+        0.16230337078651688,
+        0.17928282488839714,
+        0.24001974716533134,
+        0.312677661176294
+      ]
     }
   ]
 }

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import maplibregl from 'maplibre-gl';
-  import type { FlowBundle } from './types';
+  import type { FlowBundle, FlowType } from './types';
+  import { FLOW_TYPES, FLOW_COLORS_HEX } from './types';
   import { ParticleSystem } from './ParticleSystem';
 
   const { flowBundle }: { flowBundle: FlowBundle | null } = $props();
@@ -12,6 +13,16 @@
 
   const PAY_MIN = 100_000_000;
   const PAY_MAX = 355_000_000;
+
+  // Target node layout: [flowType, x_fraction, y_fraction] in HTML coords (y=0 at top)
+  // Three destinations stack on the right, council tax on the left, unaccounted at bottom.
+  const TARGET_LAYOUT: [FlowType, number, number][] = [
+    ['hmrc',         0.87, 0.13],
+    ['water',        0.92, 0.37],
+    ['energy',       0.92, 0.61],
+    ['council_tax',  0.08, 0.47],
+    ['unaccounted',  0.50, 0.90],
+  ];
 
   let mapContainer: HTMLDivElement;
   let particleCanvas: HTMLCanvasElement;
@@ -24,9 +35,26 @@
   let tooltip = $state({ visible: false, x: 0, y: 0, name: '', payroll: '' });
   let hoveredId: number | string | null = null;
 
-  // Hoisted refs for cleanup
   let _ps: ParticleSystem | null = null;
   let _resizeObs: ResizeObserver | null = null;
+
+  function getTargetPixels(): [number, number][] {
+    const w = mapContainer?.clientWidth  ?? window.innerWidth;
+    const h = mapContainer?.clientHeight ?? window.innerHeight;
+    return TARGET_LAYOUT.map(([, fx, fy]) => [fx * w, fy * h]);
+  }
+
+  function flowTotal(bundle: FlowBundle, key: keyof FlowBundle['lads'][0]['flows']): number {
+    return bundle.lads.reduce((s, l) => s + (l.flows[key] as number), 0);
+  }
+
+  const FLOW_AMOUNT_KEY: Record<FlowType, keyof FlowBundle['lads'][0]['flows']> = {
+    hmrc:         'hmrc_gbp',
+    water:        'water_gbp',
+    energy:       'energy_gbp',
+    council_tax:  'council_tax_gbp',
+    unaccounted:  'unaccounted_gbp',
+  };
 
   $effect(() => {
     if (mapLoaded && flowBundle) {
@@ -36,7 +64,7 @@
       const centroids = flowBundle.lads.map(
         l => centroidByCode.get(l.lad_code) ?? ([0.75, 51.25] as [number, number])
       );
-      particleSystem.setData(flowBundle, map, centroids);
+      particleSystem.setData(flowBundle, map, centroids, getTargetPixels());
     }
   });
 
@@ -179,7 +207,10 @@
     _resizeObs = new ResizeObserver(entries => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        _ps?.resize(Math.round(width), Math.round(height));
+        const w = Math.round(width);
+        const h = Math.round(height);
+        _ps?.resize(w, h);
+        _ps?.updateTargetPositions(TARGET_LAYOUT.map(([, fx, fy]) => [fx * w, fy * h]));
       }
     });
     _resizeObs.observe(mapContainer);
@@ -195,6 +226,28 @@
 <div class="map-wrap">
   <div bind:this={mapContainer} class="map"></div>
   <canvas bind:this={particleCanvas} class="particle-layer"></canvas>
+
+  <!-- Flow target nodes -->
+  {#if flowBundle}
+    {#each TARGET_LAYOUT as [type, fx, fy]}
+      {@const meta = flowBundle.flow_meta[type]}
+      {@const amount = flowTotal(flowBundle, FLOW_AMOUNT_KEY[type])}
+      {@const color = FLOW_COLORS_HEX[type]}
+      <div
+        class="target-node"
+        class:target-right={fx > 0.5}
+        class:target-left={fx < 0.5}
+        class:target-center={fx === 0.50}
+        style="left: {fx * 100}%; top: {fy * 100}%; --c: {color};"
+      >
+        <div class="target-dot"></div>
+        <div class="target-body">
+          <span class="target-label">{meta?.label ?? type}</span>
+          <span class="target-amount">{formatGbp(amount)}<span class="target-period">/mo</span></span>
+        </div>
+      </div>
+    {/each}
+  {/if}
 
   {#if tooltip.visible}
     <div
@@ -230,6 +283,78 @@
     pointer-events: none;
   }
 
+  /* ── Target nodes ── */
+  .target-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* Right-side nodes: dot on right, text on left */
+  .target-right {
+    flex-direction: row-reverse;
+  }
+
+  /* Left-side and center nodes: dot on left, text on right */
+  .target-left,
+  .target-center {
+    flex-direction: row;
+  }
+
+  .target-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--c);
+    box-shadow: 0 0 8px 3px var(--c);
+    flex-shrink: 0;
+  }
+
+  .target-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+  }
+
+  .target-right .target-body {
+    align-items: flex-end;
+  }
+
+  .target-left .target-body,
+  .target-center .target-body {
+    align-items: flex-start;
+  }
+
+  .target-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--c);
+    opacity: 0.9;
+    line-height: 1.1;
+  }
+
+  .target-amount {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #e8e8f0;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+  }
+
+  .target-period {
+    font-size: 0.6875rem;
+    font-weight: 400;
+    color: #505068;
+    margin-left: 0.1rem;
+  }
+
+  /* ── Tooltip ── */
   .tooltip {
     position: absolute;
     top: 0;
@@ -252,6 +377,10 @@
 
   .tooltip-name {
     font-weight: 600;
+  }
+
+  .target-center {
+    transform: translate(-50%, -50%);
   }
 
   .tooltip-payroll {
