@@ -41,7 +41,16 @@
   });
 
   function computeCentroid(feature: GeoJSON.Feature): [number, number] {
-    const ring = (feature.geometry as GeoJSON.Polygon).coordinates[0];
+    const geom = feature.geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon;
+    let ring: number[][];
+    if (geom.type === 'MultiPolygon') {
+      ring = geom.coordinates.reduce(
+        (best, poly) => poly[0].length > best.length ? poly[0] : best,
+        geom.coordinates[0][0]
+      );
+    } else {
+      ring = geom.coordinates[0];
+    }
     let sumLon = 0, sumLat = 0;
     for (const [lon, lat] of ring) { sumLon += lon; sumLat += lat; }
     return [sumLon / ring.length, sumLat / ring.length];
