@@ -1,7 +1,9 @@
 /**
  * GPU particle system: Three.js WebGPURenderer with TSL compute shaders.
- * Particles spawn at LAD centroids and animate straight off-screen (upward).
- * Counts are proportional to each district's total payroll estimate.
+ *
+ * Each particle is assigned to one of five flow targets (HMRC, water, energy,
+ * council tax, unaccounted) in proportion to per-LAD flow estimates. Particles
+ * travel from their LAD centroid to the target's screen position, then respawn.
  *
  * WebGPU primary; Three.js auto-falls back to WebGL2.
  */
@@ -17,64 +19,60 @@ import {
   deltaTime, time,
 } from 'three/tsl';
 import type { Map as MapLibreMap, LngLatLike } from 'maplibre-gl';
-import type { FlowBundle } from './types.js';
+import type { FlowBundle, FlowType } from './types.js';
+import { FLOW_COLORS, FLOW_TYPES } from './types.js';
 
-const NUM_PARTICLES = 5000;
-const MAX_LADS = 16;      // padded to power-of-two for alignment
-const SPEED = 140;        // pixels/second base — tight, energetic upward flow
-const MAX_LIFE = 3.0;     // seconds per particle lifetime
-const SPREAD_R = 8;       // pixel spread radius on spawn — coherent stream root
-const SPREAD_ANGLE = 0.18; // radians (±~5°) — narrow stream, not air drift
-const PARTICLE_PX = 6;    // base sprite size in CSS pixels (before streak stretch)
-const STREAK_W = 0.55;    // perpendicular-to-motion scale — thin
-const STREAK_L = 2.8;     // along-motion scale — long enough to read as a beam
-                          // when many overlap in a tight stream
-
-// Choropleth palette (matches Map.svelte's fill-color stops). Particle color is
-// looked up per source LAD so each stream glows the colour of its own district.
-const PAY_MIN = 100_000_000;
-const PAY_MAX = 355_000_000;
-const PAY_MID = (PAY_MIN + PAY_MAX) / 2;
-const COLOR_LOW  = [0x0e / 255, 0x10 / 255, 0x42 / 255]; // #0e1042
-const COLOR_MID  = [0x3d / 255, 0x45 / 255, 0xc0 / 255]; // #3d45c0
-const COLOR_HIGH = [0x7c / 255, 0x83 / 255, 0xff / 255]; // #7c83ff
+const NUM_PARTICLES = 8_000;
+const MAX_LADS = 16;
+const NUM_TARGETS = 5;
+const MAX_LIFE = 3.5;    // seconds per particle journey
+const SPREAD_R = 7;      // pixel spawn scatter radius at centroid
+const PARTICLE_PX = 5;   // base sprite size in CSS pixels
+const STREAK_W = 0.45;   // perpendicular-to-motion scale — thin
+const STREAK_L = 3.0;    // along-motion scale — distinct streak
 
 export class ParticleSystem {
   private renderer: InstanceType<typeof THREE.WebGPURenderer>;
   private scene: THREE.Scene;
   private camera: THREE.OrthographicCamera;
 
-  // GPU-only storage (written exclusively by compute shaders)
-  private positions: any; // instancedArray vec3[N]
-  private ages: any;      // instancedArray float[N]
+  // GPU-only per-particle state (written by compute shaders)
+  private positions: any;     // vec3[N] — current pixel position
+  private ages: any;          // float[N] — 0→1 lifecycle
+  private targetIdxBuf: any;  // float[N] — which target (0-4)
+  private spawnPosBuf: any;   // vec2[N] — centroid snapshot at spawn
 
-  // CPU→GPU storage (filled from JS, read by GPU)
-  private ladData!: Float32Array;
-  private ladAttr!: THREE.StorageBufferAttribute;
-  private ladStorage: any;
+  // CPU→GPU: per-particle LAD assignment
+  private ladIdxData!: Float32Array;
+  private ladIdxAttr!: THREE.StorageBufferAttribute;
+  private ladIdxStorage: any;
 
+  // CPU→GPU: LAD centroid screen positions (updated every frame for map pan)
   private centroidData!: Float32Array;
   private centroidAttr!: THREE.StorageBufferAttribute;
   private centroidStorage: any;
 
-  private colorData!: Float32Array;
-  private colorAttr!: THREE.StorageBufferAttribute;
-  private colorStorage: any;
+  // CPU→GPU: flow thresholds — vec4 per LAD: (t0, t1, t2, t3) cumulative fractions
+  private flowThreshData!: Float32Array;
+  private flowThreshAttr!: THREE.StorageBufferAttribute;
+  private flowThreshStorage: any;
 
-  // Per-LAD centroid delta in pixels since last frame. Compute shader adds this
-  // to in-flight particles so they track the map as it pans/zooms instead of
-  // freezing in their previous screen positions.
-  private prevCentroidData!: Float32Array;
-  private deltaData!: Float32Array;
-  private deltaAttr!: THREE.StorageBufferAttribute;
-  private deltaStorage: any;
-  private firstCentroidUpdate = true;
+  // CPU→GPU: target node screen positions (5 entries, updated on resize)
+  private targetPosData!: Float32Array;
+  private targetPosAttr!: THREE.StorageBufferAttribute;
+  private targetPosStorage: any;
+
+  // CPU→GPU: target colors (one vec4 per flow type, set once)
+  private targetColorData!: Float32Array;
+  private targetColorAttr!: THREE.StorageBufferAttribute;
+  private targetColorStorage: any;
 
   private computeInit: any;
   private computeUpdate: any;
 
   private map: MapLibreMap | null = null;
   private centroidLngLats: [number, number][] = [];
+  private cachedTargetPixels: [number, number][] = [];
   private ready = false;
 
   width: number;
@@ -86,9 +84,7 @@ export class ParticleSystem {
 
     this.renderer = new THREE.WebGPURenderer({ canvas, alpha: true, antialias: false });
     this.scene = new THREE.Scene();
-    // Standard Three convention: top > bottom. World y=0 = bottom of screen,
-    // y=height = top. We flip MapLibre's pixel.y when feeding coords (it has y=0 at top).
-    // Required so triangle winding stays correct and FrontSide isn't back-face-culled.
+    // y=0 at bottom, y=height at top (standard OpenGL convention)
     this.camera = new THREE.OrthographicCamera(0, this.width, this.height, 0, 0.1, 100);
     this.camera.position.z = 1;
   }
@@ -104,153 +100,179 @@ export class ParticleSystem {
     this.buildMesh();
 
     this.renderer.setAnimationLoop(() => this.frame());
-
     console.info('[ParticleSystem] backend:', this.backendName);
   }
 
   private buildBuffers(): void {
     const N = NUM_PARTICLES;
 
-    this.positions = instancedArray(N, 'vec3'); // (x, y, 0)
-    this.ages = instancedArray(N, 'float');
+    // Per-particle GPU state
+    this.positions = instancedArray(N, 'vec3');
+    this.ages      = instancedArray(N, 'float');
+    this.targetIdxBuf = instancedArray(N, 'float');
+    this.spawnPosBuf  = instancedArray(N, 'vec2');
 
-    this.ladData = new Float32Array(N);
+    // Per-particle LAD index (CPU writes once, GPU reads)
+    this.ladIdxData = new Float32Array(N);
     // @ts-ignore — StorageBufferAttribute is WebGPU-only, @types/three lags the API
-    this.ladAttr = new THREE.StorageBufferAttribute(this.ladData, 1);
-    this.ladStorage = storage(this.ladAttr, 'float', N);
+    this.ladIdxAttr = new THREE.StorageBufferAttribute(this.ladIdxData, 1);
+    this.ladIdxStorage = storage(this.ladIdxAttr, 'float', N);
 
+    // LAD centroid positions in screen space
     this.centroidData = new Float32Array(MAX_LADS * 2);
     // @ts-ignore
     this.centroidAttr = new THREE.StorageBufferAttribute(this.centroidData, 2);
     this.centroidStorage = storage(this.centroidAttr, 'vec2', MAX_LADS);
 
-    // Per-LAD glow colour. Pad to vec4 because WebGPU storage buffers align vec3
-    // to 16 bytes — using 4 components avoids any padding ambiguity.
-    this.colorData = new Float32Array(MAX_LADS * 4);
+    // Flow thresholds per LAD (4 cumulative fractions, stored as vec4)
+    this.flowThreshData = new Float32Array(MAX_LADS * 4);
     // @ts-ignore
-    this.colorAttr = new THREE.StorageBufferAttribute(this.colorData, 4);
-    this.colorStorage = storage(this.colorAttr, 'vec4', MAX_LADS);
+    this.flowThreshAttr = new THREE.StorageBufferAttribute(this.flowThreshData, 4);
+    this.flowThreshStorage = storage(this.flowThreshAttr, 'vec4', MAX_LADS);
 
-    // Centroid delta buffer (per-LAD pixel shift since last frame). Compute
-    // shader applies this to in-flight particles to track map pan/zoom.
-    this.prevCentroidData = new Float32Array(MAX_LADS * 2);
-    this.deltaData = new Float32Array(MAX_LADS * 2);
+    // Target node pixel positions (5 targets × 2 floats)
+    this.targetPosData = new Float32Array(NUM_TARGETS * 2);
     // @ts-ignore
-    this.deltaAttr = new THREE.StorageBufferAttribute(this.deltaData, 2);
-    this.deltaStorage = storage(this.deltaAttr, 'vec2', MAX_LADS);
+    this.targetPosAttr = new THREE.StorageBufferAttribute(this.targetPosData, 2);
+    this.targetPosStorage = storage(this.targetPosAttr, 'vec2', NUM_TARGETS);
+
+    // Target colors (5 targets × 4 floats RGBA)
+    this.targetColorData = new Float32Array(NUM_TARGETS * 4);
+    // @ts-ignore
+    this.targetColorAttr = new THREE.StorageBufferAttribute(this.targetColorData, 4);
+    this.targetColorStorage = storage(this.targetColorAttr, 'vec4', NUM_TARGETS);
+
+    FLOW_TYPES.forEach((ft: FlowType, i: number) => {
+      const [r, g, b] = FLOW_COLORS[ft];
+      this.targetColorData[i * 4 + 0] = r;
+      this.targetColorData[i * 4 + 1] = g;
+      this.targetColorData[i * 4 + 2] = b;
+      this.targetColorData[i * 4 + 3] = 1;
+    });
+    this.targetColorAttr.needsUpdate = true;
   }
 
   private buildCompute(): void {
     const N = NUM_PARTICLES;
-    const speed = uniform(SPEED);
-    const maxLife = uniform(MAX_LIFE);
-    const spreadR = uniform(SPREAD_R);
-    const spreadAngle = uniform(SPREAD_ANGLE);
-    const { positions, ages, ladStorage, centroidStorage, deltaStorage } = this;
+    const maxLife  = uniform(MAX_LIFE);
+    const spreadR  = uniform(SPREAD_R);
+    const { positions, ages, targetIdxBuf, spawnPosBuf,
+            ladIdxStorage, centroidStorage, flowThreshStorage } = this;
+    const targetPosStorage = this.targetPosStorage;
 
-    // Init: assign each particle a random age offset and position near its centroid.
-    // Two independent hash calls (different seeds) instead of hash(vec2) avoids
-    // TypeScript's scalar return-type assumption on the hash() overload.
+    // Assign target bucket using If/ElseIf chain on cumulative thresholds.
+    // r is in [0,1); t0…t3 are cumulative fractions summing toward 1.
+    const assignTarget = (storageEl: any, r: any, thresh: any) => {
+      If(r.lessThan(thresh.x), () => {
+        storageEl.assign(float(0));
+      }).ElseIf(r.lessThan(thresh.y), () => {
+        storageEl.assign(float(1));
+      }).ElseIf(r.lessThan(thresh.z), () => {
+        storageEl.assign(float(2));
+      }).ElseIf(r.lessThan(thresh.w), () => {
+        storageEl.assign(float(3));
+      }).Else(() => {
+        storageEl.assign(float(4));
+      });
+    };
+
+    // --- Init: assign LAD, target, spawn position, staggered age ---
     this.computeInit = Fn(() => {
       const i = instanceIndex;
-      const ladIdx = ladStorage.element(i);
-      const centroid = centroidStorage.element(int(ladIdx));
+      const ladIdx = int(ladIdxStorage.element(i));
+      const centroid = centroidStorage.element(ladIdx);
+      const thresh   = flowThreshStorage.element(ladIdx);
 
+      // Stagger initial ages so particles distribute along paths immediately
       ages.element(i).assign(hash(float(i)));
 
-      const angle = hash(float(i).add(float(42))).mul(Math.PI * 2);
-      const r = hash(float(i).add(float(83))).mul(spreadR);
-      positions.element(i).assign(vec3(
-        centroid.x.add(cos(angle).mul(r)),
-        centroid.y.add(sin(angle).mul(r)),
-        float(0),
-      ));
+      // Pick target based on flow thresholds
+      const r0 = hash(float(i).add(float(17)));
+      assignTarget(targetIdxBuf.element(i), r0, thresh);
+
+      // Spawn at centroid + small random scatter
+      const spawnAngle = hash(float(i).add(float(42))).mul(Math.PI * 2);
+      const spawnR     = hash(float(i).add(float(83))).mul(spreadR);
+      const sx = centroid.x.add(cos(spawnAngle).mul(spawnR));
+      const sy = centroid.y.add(sin(spawnAngle).mul(spawnR));
+      spawnPosBuf.element(i).assign(vec2(sx, sy));
+      positions.element(i).assign(vec3(sx, sy, float(0)));
     })().compute(N);
 
-    // Update: advance age, move particle (with slight upward acceleration over
-    // life so it reads as an electric stream rather than air drift), or respawn.
+    // --- Update: advance age, interpolate position, or respawn ---
     this.computeUpdate = Fn(() => {
       const i = instanceIndex;
-      const pos = positions.element(i);
-      const age = ages.element(i);
-
-      // Stable per-particle direction: tight ~±5° spread → coherent upward stream.
-      // Camera convention: world y=0 at bottom, y=height at top → +y is up the screen.
-      const hDir = hash(float(i).add(float(0.7)));
-      const pertAngle = hDir.sub(0.5).mul(spreadAngle);
-      const dx = sin(pertAngle);
-      const dy = cos(pertAngle); // positive = up the screen
-
-      // Velocity ramps from 0.7× at birth to 1.4× at end-of-life — gives the
-      // stream visible momentum and a sparky "shooting upward" feel.
-      const velScale = age.mul(float(0.7)).add(float(0.7));
+      const age    = ages.element(i);
+      const ladIdx = int(ladIdxStorage.element(i));
 
       age.addAssign(deltaTime.div(maxLife));
 
       If(age.greaterThanEqual(float(1.0)), () => {
-        const ladIdx = ladStorage.element(i);
-        const centroid = centroidStorage.element(int(ladIdx));
+        // Respawn: re-pick target, capture fresh centroid as spawn origin
+        const centroid = centroidStorage.element(ladIdx);
+        const thresh   = flowThreshStorage.element(ladIdx);
 
-        // Two independent hashes seeded by (i, time) give different values each respawn
-        const spawnAngle = hash(float(i).add(time)).mul(Math.PI * 2);
-        const spawnR = hash(float(i).add(time.mul(float(1.7)))).mul(spreadR);
+        const rSpawn = hash(float(i).add(time));
+        assignTarget(targetIdxBuf.element(i), rSpawn, thresh);
 
-        pos.assign(vec3(
-          centroid.x.add(cos(spawnAngle).mul(spawnR)),
-          centroid.y.add(sin(spawnAngle).mul(spawnR)),
-          float(0),
-        ));
+        const spawnAngle = hash(float(i).add(time.mul(float(1.7)))).mul(Math.PI * 2);
+        const spawnR     = hash(float(i).add(time.mul(float(2.3)))).mul(spreadR);
+        const sx = centroid.x.add(cos(spawnAngle).mul(spawnR));
+        const sy = centroid.y.add(sin(spawnAngle).mul(spawnR));
+        spawnPosBuf.element(i).assign(vec2(sx, sy));
+        positions.element(i).assign(vec3(sx, sy, float(0)));
         age.assign(float(0));
       }).Else(() => {
-        pos.x.addAssign(dx.mul(speed).mul(deltaTime).mul(velScale));
-        pos.y.addAssign(dy.mul(speed).mul(deltaTime).mul(velScale));
+        // Smooth travel from spawn to target using smoothstep easing
+        const tgtIdx = int(targetIdxBuf.element(i));
+        const spawn  = spawnPosBuf.element(i);
+        const tgt    = targetPosStorage.element(tgtIdx);
 
-        // Track per-LAD map movement so in-flight particles don't freeze in
-        // their previous screen position when the user pans/zooms.
-        const trackLadIdx = ladStorage.element(i);
-        const delta = deltaStorage.element(int(trackLadIdx));
-        pos.x.addAssign(delta.x);
-        pos.y.addAssign(delta.y);
+        // smoothstep: t² × (3 − 2t) — ease in and out
+        const t      = age.clamp(0, 1);
+        const eased  = t.mul(t).mul(float(3).sub(t.mul(float(2))));
+
+        const px = spawn.x.add(tgt.x.sub(spawn.x).mul(eased));
+        const py = spawn.y.add(tgt.y.sub(spawn.y).mul(eased));
+        positions.element(i).assign(vec3(px, py, float(0)));
       });
     })().compute(N);
   }
 
   private buildMesh(): void {
-    const { positions, ages, ladStorage, colorStorage } = this;
+    const { positions, ages, targetIdxBuf, spawnPosBuf } = this;
+    const targetPosStorage   = this.targetPosStorage;
+    const targetColorStorage = this.targetColorStorage;
     const i = instanceIndex;
 
-    const age = ages.element(i);
-    const fadeIn = age.div(0.15).clamp(0, 1);
+    const age     = ages.element(i);
+    const fadeIn  = age.div(0.15).clamp(0, 1);
     const fadeOut = age.sub(0.85).div(0.15).clamp(0, 1).oneMinus();
     const lifetimeFade = fadeIn.mul(fadeOut);
 
-    // Soft radial glow: bright core, smooth gaussian-ish falloff to transparent
-    // at the quad edge. Reads as a neon spark rather than a hard-edged disc.
+    // Soft radial glow — bright centre, smooth gaussian-ish falloff
     const radial = uv().sub(vec2(0.5)).length().mul(2.0).clamp(0, 1);
-    const glow = float(1.0).sub(radial).pow(2.2);
+    const glow   = float(1.0).sub(radial).pow(2.2);
     const opacityNode = lifetimeFade.mul(glow);
 
-    // Look up the source LAD's colour from the per-LAD palette buffer.
-    // Boost it for additive saturation — overlapping particles bloom toward white
-    // at high density (more money → brighter glow).
-    const ladIdx = ladStorage.element(i);
-    const ladColor = colorStorage.element(int(ladIdx));
-    const colorNode = ladColor.rgb.mul(float(1.6));
+    // Color from target type, boosted for additive bloom effect
+    const tgtIdx   = int(targetIdxBuf.element(i));
+    const flowColor = targetColorStorage.element(tgtIdx);
+    const colorNode = flowColor.rgb.mul(float(1.5));
 
-    // Per-particle direction — must use the SAME formula as buildCompute() so
-    // the streak's long axis aligns with the actual flight direction.
-    const hDir = hash(float(i).add(float(0.7)));
-    const pertAngle = hDir.sub(0.5).mul(SPREAD_ANGLE);
-    const dirX = sin(pertAngle);
-    const dirY = cos(pertAngle); // motion direction (mostly +Y / up the screen)
+    // Streak direction: normalize (target − spawn) for each particle
+    const spawn   = spawnPosBuf.element(i);
+    const tgtPos  = targetPosStorage.element(tgtIdx);
+    const rawDir  = tgtPos.sub(spawn);
+    const len     = rawDir.length().max(float(1.0));
+    const dirX    = rawDir.x.div(len);
+    const dirY    = rawDir.y.div(len);
 
-    // Stretch the local quad: thin perpendicular to motion, long along it.
-    // Then rotate so the stretched Y axis aligns with the motion direction.
-    // Math: rotated = scaledX * perp + scaledY * dir, where perp = (dirY, -dirX).
-    const sx = positionLocal.x.mul(STREAK_W);
-    const sy = positionLocal.y.mul(STREAK_L);
-    const rotX = sx.mul(dirY).add(sy.mul(dirX));
-    const rotY = sx.mul(dirX.negate()).add(sy.mul(dirY));
+    // Stretch quad: thin perpendicular, long along motion direction
+    const sx    = positionLocal.x.mul(STREAK_W);
+    const sy    = positionLocal.y.mul(STREAK_L);
+    const rotX  = sx.mul(dirY).add(sy.mul(dirX));
+    const rotY  = sx.mul(dirX.negate()).add(sy.mul(dirY));
     const streakOffset = vec3(rotX, rotY, float(0));
 
     const material = new THREE.MeshBasicNodeMaterial({
@@ -258,29 +280,31 @@ export class ParticleSystem {
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
-    // World vertex = per-instance particle position + rotated/stretched local offset.
     material.positionNode = streakOffset.add(positions.toAttribute());
-    material.colorNode = colorNode;
-    material.opacityNode = opacityNode;
+    material.colorNode    = colorNode;
+    material.opacityNode  = opacityNode;
     material.alphaToCoverage = false;
 
-    // Base 6×6 quad in world units. Stretching turns it into a ~3.3×16.8 px streak.
-    // Many overlapping streaks in a tight stream visually merge into a glowing beam.
     const geometry = new THREE.PlaneGeometry(PARTICLE_PX, PARTICLE_PX);
     const mesh = new THREE.InstancedMesh(geometry, material, NUM_PARTICLES);
     mesh.frustumCulled = false;
     this.scene.add(mesh);
   }
 
-  setData(bundle: FlowBundle, map: MapLibreMap, centroidLngLats: [number, number][]): void {
+  setData(
+    bundle: FlowBundle,
+    map: MapLibreMap,
+    centroidLngLats: [number, number][],
+    targetPixels: [number, number][],
+  ): void {
     this.map = map;
     this.centroidLngLats = centroidLngLats;
 
-    const lads = bundle.lads;
+    const lads  = bundle.lads;
     const total = lads.reduce((s, l) => s + l.total_payroll_estimate_gbp, 0);
-    const N = NUM_PARTICLES;
+    const N     = NUM_PARTICLES;
 
-    // Proportional particle counts, clamped to N total
+    // Proportional particle allocation per LAD
     const counts = lads.map(l =>
       Math.max(5, Math.round(N * l.total_payroll_estimate_gbp / total))
     );
@@ -294,52 +318,47 @@ export class ParticleSystem {
     let idx = 0;
     for (let ladIdx = 0; ladIdx < lads.length; ladIdx++) {
       for (let j = 0; j < counts[ladIdx]; j++) {
-        this.ladData[idx++] = ladIdx;
+        this.ladIdxData[idx++] = ladIdx;
       }
     }
-    this.ladAttr.needsUpdate = true;
+    this.ladIdxAttr.needsUpdate = true;
 
-    // Per-LAD glow colour, interpolated through the same 3-stop palette as the
-    // choropleth so the stream and the tile underneath visually match.
+    // Upload flow thresholds
     for (let i = 0; i < lads.length && i < MAX_LADS; i++) {
-      const rgb = paletteAt(lads[i].total_payroll_estimate_gbp);
-      this.colorData[i * 4 + 0] = rgb[0];
-      this.colorData[i * 4 + 1] = rgb[1];
-      this.colorData[i * 4 + 2] = rgb[2];
-      this.colorData[i * 4 + 3] = 1;
+      const [t0, t1, t2, t3] = lads[i].flow_thresholds;
+      this.flowThreshData[i * 4 + 0] = t0;
+      this.flowThreshData[i * 4 + 1] = t1;
+      this.flowThreshData[i * 4 + 2] = t2;
+      this.flowThreshData[i * 4 + 3] = t3;
     }
-    this.colorAttr.needsUpdate = true;
+    this.flowThreshAttr.needsUpdate = true;
 
     this.updateCentroids();
+    this.updateTargetPositions(targetPixels);
     this.renderer.compute(this.computeInit);
     this.ready = true;
   }
 
   updateCentroids(): void {
     if (!this.map || !this.centroidLngLats.length) return;
-    const useDelta = !this.firstCentroidUpdate;
     for (let i = 0; i < this.centroidLngLats.length && i < MAX_LADS; i++) {
       const pt = this.map.project(this.centroidLngLats[i] as LngLatLike);
-      const newX = pt.x;
-      // Flip Y: MapLibre's pt.y has 0 at top, our camera has 0 at bottom.
-      const newY = this.height - pt.y;
-
-      if (useDelta) {
-        this.deltaData[i * 2]     = newX - this.prevCentroidData[i * 2];
-        this.deltaData[i * 2 + 1] = newY - this.prevCentroidData[i * 2 + 1];
-      } else {
-        this.deltaData[i * 2]     = 0;
-        this.deltaData[i * 2 + 1] = 0;
-      }
-
-      this.prevCentroidData[i * 2]     = newX;
-      this.prevCentroidData[i * 2 + 1] = newY;
-      this.centroidData[i * 2]     = newX;
-      this.centroidData[i * 2 + 1] = newY;
+      // Convert MapLibre pixel coords (y=0 at top) to camera space (y=0 at bottom)
+      this.centroidData[i * 2]     = pt.x;
+      this.centroidData[i * 2 + 1] = this.height - pt.y;
     }
-    this.firstCentroidUpdate = false;
     this.centroidAttr.needsUpdate = true;
-    this.deltaAttr.needsUpdate = true;
+  }
+
+  updateTargetPositions(htmlPixels: [number, number][]): void {
+    // htmlPixels: [x, y] in HTML coordinates (y=0 at top)
+    // Convert to camera space (y=0 at bottom)
+    this.cachedTargetPixels = htmlPixels;
+    for (let i = 0; i < htmlPixels.length && i < NUM_TARGETS; i++) {
+      this.targetPosData[i * 2]     = htmlPixels[i][0];
+      this.targetPosData[i * 2 + 1] = this.height - htmlPixels[i][1];
+    }
+    this.targetPosAttr.needsUpdate = true;
   }
 
   private frame(): void {
@@ -350,12 +369,15 @@ export class ParticleSystem {
   }
 
   resize(width: number, height: number): void {
-    this.width = width;
+    this.width  = width;
     this.height = height;
     this.renderer.setSize(width, height, false);
     this.camera.right = width;
-    this.camera.top = height;  // standard convention: top = max y, bottom stays 0
+    this.camera.top   = height;
     this.camera.updateProjectionMatrix();
+    if (this.cachedTargetPixels.length) {
+      this.updateTargetPositions(this.cachedTargetPixels);
+    }
   }
 
   get backendName(): string {
@@ -368,25 +390,3 @@ export class ParticleSystem {
     this.renderer.dispose();
   }
 }
-
-// Two-segment lerp through (LOW → MID → HIGH) keyed by payroll. Mirrors the
-// MapLibre paint expression so each LAD's particle stream matches its tile.
-function paletteAt(payroll: number): [number, number, number] {
-  if (payroll <= PAY_MID) {
-    const t = clamp01((payroll - PAY_MIN) / (PAY_MID - PAY_MIN));
-    return [
-      lerp(COLOR_LOW[0], COLOR_MID[0], t),
-      lerp(COLOR_LOW[1], COLOR_MID[1], t),
-      lerp(COLOR_LOW[2], COLOR_MID[2], t),
-    ];
-  }
-  const t = clamp01((payroll - PAY_MID) / (PAY_MAX - PAY_MID));
-  return [
-    lerp(COLOR_MID[0], COLOR_HIGH[0], t),
-    lerp(COLOR_MID[1], COLOR_HIGH[1], t),
-    lerp(COLOR_MID[2], COLOR_HIGH[2], t),
-  ];
-}
-
-function lerp(a: number, b: number, t: number): number { return a + (b - a) * t; }
-function clamp01(x: number): number { return Math.max(0, Math.min(1, x)); }
