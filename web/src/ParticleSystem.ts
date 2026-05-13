@@ -273,6 +273,7 @@ export class ParticleSystem {
     const sy    = positionLocal.y.mul(STREAK_L);
     const rotX  = sx.mul(dirY).add(sy.mul(dirX));
     const rotY  = sx.mul(dirX.negate()).add(sy.mul(dirY));
+    // @ts-ignore — TSL swizzle nodes type as vec3 but are treated as scalars at runtime
     const streakOffset = vec3(rotX, rotY, float(0));
 
     const material = new THREE.MeshBasicNodeMaterial({
