@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Map from './Map.svelte';
-  import SourcePanel from './SourcePanel.svelte';
-  import type { FlowBundle } from './types';
+  import FlowPanel from './FlowPanel.svelte';
+  import MethodologyDrawer from './MethodologyDrawer.svelte';
+  import type { FlowBundle, FlowType, LadData, PanelSelection } from './types';
 
   const buildDate = new Date(__BUILD_DATE__).toLocaleDateString('en-GB', {
     day: 'numeric',
@@ -11,27 +12,64 @@
   });
 
   let flowBundle = $state<FlowBundle | null>(null);
+  let glossary = $state<Record<string, string>>({});
+  let panelSelection = $state<PanelSelection>(null);
+  let methodologyOpen = $state(false);
 
   onMount(async () => {
-    const res = await fetch('/data/flows/2025-10.json');
-    flowBundle = await res.json();
+    const [flowRes, glossaryRes] = await Promise.all([
+      fetch('/data/flows/2025-10.json'),
+      fetch('/data/glossary.json'),
+    ]);
+    flowBundle = await flowRes.json();
+    glossary = await glossaryRes.json();
   });
+
+  function handleFlowSelect(type: FlowType) {
+    panelSelection = { kind: 'flow', type };
+  }
+
+  function handleLadClick(lad: LadData) {
+    panelSelection = { kind: 'lad', lad };
+  }
+
+  function handlePanelClose() {
+    panelSelection = null;
+  }
 </script>
 
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape') { methodologyOpen = false; panelSelection = null; } }} />
+
 <div class="app">
-  <Map {flowBundle} />
+  <Map {flowBundle} onFlowSelect={handleFlowSelect} onLadClick={handleLadClick} />
 
   <header class="overlay-header">
     <h1>Where's the Money?</h1>
     <p class="tagline">Every pound of Kent payroll, traced to where it goes.</p>
   </header>
 
-  <SourcePanel source={flowBundle?.source ?? null} />
+  <FlowPanel
+    selection={panelSelection}
+    {flowBundle}
+    {glossary}
+    onClose={handlePanelClose}
+  />
+
+  <MethodologyDrawer
+    open={methodologyOpen}
+    {flowBundle}
+    {glossary}
+    onClose={() => methodologyOpen = false}
+  />
 
   <footer class="overlay-footer">
     <span class="deploy-date">Deployed {buildDate}</span>
     <span class="separator">·</span>
-    <span class="status-pill">Milestone 5 — flow targets</span>
+    <span class="status-pill">Milestone 6 — source traceability</span>
+    <span class="separator">·</span>
+    <button class="methodology-btn" onclick={() => methodologyOpen = !methodologyOpen}>
+      Methodology
+    </button>
   </footer>
 </div>
 
@@ -134,5 +172,24 @@
 
   .deploy-date {
     color: #404055;
+  }
+
+  .methodology-btn {
+    pointer-events: all;
+    background: none;
+    border: 1px solid rgba(124, 131, 255, 0.2);
+    color: #7c83ff;
+    font-size: 0.6875rem;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    transition: background 0.15s, color 0.15s;
+    user-select: none;
+  }
+
+  .methodology-btn:hover {
+    background: rgba(124, 131, 255, 0.1);
+    color: #a0a6ff;
   }
 </style>

@@ -1,0 +1,14 @@
+{
+  "median monthly pay": "The midpoint monthly salary in an area — half of employees earn more, half earn less. Used here as a proxy for typical pay; understates true total payroll because the mean (which correctly sums to total payroll) is pulled above the median by high earners.",
+  "median pay": "The midpoint of the pay distribution — half earn more, half earn less. Understates total payroll in right-skewed distributions.",
+  "default tariff cap": "Ofgem's quarterly cap on unit rates and standing charges for households on default (variable) energy tariffs. Reviewed every quarter based on wholesale energy costs. Q4 2025 (Oct–Dec): £1,717/year for a typical dual-fuel home.",
+  "ultimate parent": "The topmost entity in a company's ownership chain — not itself owned by another company. Often registered in a different country from the operating subsidiary that a household pays directly.",
+  "council tax requirement": "The total amount a billing authority must raise through council tax in a financial year, after subtracting central government grants and other income. Divided by the tax base to arrive at the Band D rate.",
+  "primary threshold": "The earnings level at which employees start paying National Insurance contributions. £12,570 per year (£1,047.50 per month) in 2025/26.",
+  "employee NI": "National Insurance contributions paid by employees on earnings above the primary threshold. In 2025/26: 8% on earnings between £12,570–£50,270 per year, then 2% on any earnings above that.",
+  "income tax": "Tax on personal earnings above the personal allowance (£12,570/year in 2025/26). Basic rate: 20% up to £50,270; higher rate: 40% above. The 45% additional rate (above £125,140) is omitted from this model.",
+  "PAYE RTI": "Pay As You Earn Real Time Information — the system under which UK employers report each employee's pay and deductions to HMRC on or before each payday. Provides whole-population payroll data at local authority level with a roughly 2–3 week publication lag.",
+  "positively-skewed": "A distribution with a long right-hand tail. Pay is positively skewed: a small number of very high earners pull the mean above the median, so median × count understates the true payroll total.",
+  "council tax": "An annual charge on domestic properties, set by local authorities. Properties are assigned to one of eight valuation bands (A–H) based on estimated 1991 market values. Band D is the reference rate; other bands are fixed fractions or multiples of it.",
+  "OGL3": "Open Government Licence version 3 — permits free use, adaptation, and redistribution of official data, provided the source and licence are attributed."
+}

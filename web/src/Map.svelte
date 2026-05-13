@@ -1,11 +1,15 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import maplibregl from 'maplibre-gl';
-  import type { FlowBundle, FlowType } from './types';
-  import { FLOW_TYPES, FLOW_COLORS_HEX } from './types';
+  import type { FlowBundle, FlowType, LadData } from './types';
+  import { FLOW_COLORS_HEX, FLOW_AMOUNT_KEY } from './types';
   import { ParticleSystem } from './ParticleSystem';
 
-  const { flowBundle }: { flowBundle: FlowBundle | null } = $props();
+  const { flowBundle, onFlowSelect, onLadClick }: {
+    flowBundle: FlowBundle | null;
+    onFlowSelect?: (type: FlowType) => void;
+    onLadClick?: (lad: LadData) => void;
+  } = $props();
 
   const STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
   const KENT_CENTER: [number, number] = [0.75, 51.25];
@@ -48,13 +52,7 @@
     return bundle.lads.reduce((s, l) => s + (l.flows[key] as number), 0);
   }
 
-  const FLOW_AMOUNT_KEY: Record<FlowType, keyof FlowBundle['lads'][0]['flows']> = {
-    hmrc:         'hmrc_gbp',
-    water:        'water_gbp',
-    energy:       'energy_gbp',
-    council_tax:  'council_tax_gbp',
-    unaccounted:  'unaccounted_gbp',
-  };
+  let hoveredTarget = $state<FlowType | null>(null);
 
   $effect(() => {
     if (mapLoaded && flowBundle) {
@@ -169,7 +167,7 @@
 
       map.on('mousemove', 'lad-fill', (e) => {
         if (!e.features?.length) return;
-        map.getCanvas().style.cursor = 'crosshair';
+        map.getCanvas().style.cursor = 'pointer';
         const feature = e.features[0];
         const id = feature.id as number | string | undefined;
         if (hoveredId !== null && hoveredId !== id) {
@@ -195,6 +193,13 @@
           hoveredId = null;
         }
         tooltip = { ...tooltip, visible: false };
+      });
+
+      map.on('click', 'lad-fill', (e) => {
+        if (!e.features?.length || !flowBundle) return;
+        const props = e.features[0].properties as Record<string, string>;
+        const lad = flowBundle.lads.find(l => l.lad_code === props['LAD24CD']);
+        if (lad) onLadClick?.(lad);
       });
 
       mapLoaded = true;
@@ -233,19 +238,24 @@
       {@const meta = flowBundle.flow_meta[type]}
       {@const amount = flowTotal(flowBundle, FLOW_AMOUNT_KEY[type])}
       {@const color = FLOW_COLORS_HEX[type]}
-      <div
+      <button
         class="target-node"
         class:target-right={fx > 0.5}
         class:target-left={fx < 0.5}
         class:target-center={fx === 0.50}
+        class:target-hovered={hoveredTarget === type}
         style="left: {fx * 100}%; top: {fy * 100}%; --c: {color};"
+        onclick={() => onFlowSelect?.(type)}
+        onmouseenter={() => hoveredTarget = type}
+        onmouseleave={() => hoveredTarget = null}
+        aria-label="Explore {meta?.label ?? type} flow details"
       >
         <div class="target-dot"></div>
         <div class="target-body">
           <span class="target-label">{meta?.label ?? type}</span>
           <span class="target-amount">{formatGbp(amount)}<span class="target-period">/mo</span></span>
         </div>
-      </div>
+      </button>
     {/each}
   {/if}
 
@@ -290,8 +300,19 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    pointer-events: none;
+    pointer-events: all;
     user-select: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.3rem;
+    border-radius: 4px;
+    transition: background 0.15s;
+  }
+
+  .target-node:hover,
+  .target-node.target-hovered {
+    background: rgba(124, 131, 255, 0.06);
   }
 
   /* Right-side nodes: dot on right, text on left */
