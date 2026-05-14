@@ -3,7 +3,9 @@
   import Map from './Map.svelte';
   import FlowPanel from './FlowPanel.svelte';
   import MethodologyDrawer from './MethodologyDrawer.svelte';
-  import type { FlowBundle, FlowType, LadData, PanelSelection } from './types';
+  import LayerControls from './LayerControls.svelte';
+  import type { FlowBundle, FlowType, LadData, LayerToggles, LayerToggleState, PanelSelection } from './types';
+  import { DEFAULT_TOGGLES, resolveEffectiveToggles, computeDisplayAmounts } from './types';
 
   const buildDate = new Date(__BUILD_DATE__).toLocaleDateString('en-GB', {
     day: 'numeric',
@@ -15,6 +17,19 @@
   let glossary = $state<Record<string, string>>({});
   let panelSelection = $state<PanelSelection>(null);
   let methodologyOpen = $state(false);
+
+  let layerToggles = $state<LayerToggles>({ ...DEFAULT_TOGGLES });
+  let rawOnly = $state(false);
+
+  const resolvedToggles = $derived(
+    flowBundle
+      ? resolveEffectiveToggles(layerToggles, rawOnly, flowBundle.flow_meta as any)
+      : ({ ...DEFAULT_TOGGLES } as LayerToggles)
+  );
+
+  const displayAmounts = $derived(
+    flowBundle ? computeDisplayAmounts(flowBundle, resolvedToggles) : null
+  );
 
   onMount(async () => {
     const [flowRes, glossaryRes] = await Promise.all([
@@ -36,12 +51,26 @@
   function handlePanelClose() {
     panelSelection = null;
   }
+
+  function handleToggleChange(type: FlowType, state: LayerToggleState) {
+    layerToggles = { ...layerToggles, [type]: state };
+  }
+
+  function handleRawOnlyChange(v: boolean) {
+    rawOnly = v;
+  }
 </script>
 
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape') { methodologyOpen = false; panelSelection = null; } }} />
 
 <div class="app">
-  <Map {flowBundle} onFlowSelect={handleFlowSelect} onLadClick={handleLadClick} />
+  <Map
+    {flowBundle}
+    {resolvedToggles}
+    {displayAmounts}
+    onFlowSelect={handleFlowSelect}
+    onLadClick={handleLadClick}
+  />
 
   <header class="overlay-header">
     <h1>Where's the Money?</h1>
@@ -62,10 +91,20 @@
     onClose={() => methodologyOpen = false}
   />
 
+  <LayerControls
+    {flowBundle}
+    {layerToggles}
+    {rawOnly}
+    {resolvedToggles}
+    {displayAmounts}
+    onToggleChange={handleToggleChange}
+    onRawOnlyChange={handleRawOnlyChange}
+  />
+
   <footer class="overlay-footer">
     <span class="deploy-date">Deployed {buildDate}</span>
     <span class="separator">·</span>
-    <span class="status-pill">Milestone 6 — source traceability</span>
+    <span class="status-pill">Milestone 7 — layer toggles</span>
     <span class="separator">·</span>
     <button class="methodology-btn" onclick={() => methodologyOpen = !methodologyOpen}>
       Methodology
