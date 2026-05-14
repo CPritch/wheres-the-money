@@ -19,8 +19,8 @@ import {
   deltaTime, time,
 } from 'three/tsl';
 import type { Map as MapLibreMap, LngLatLike } from 'maplibre-gl';
-import type { FlowBundle, FlowType } from './types.js';
-import { FLOW_COLORS, FLOW_TYPES } from './types.js';
+import type { FlowBundle, FlowMeta, FlowType, LayerToggles } from './types.js';
+import { FLOW_COLORS, FLOW_TYPES, isLayerEffectivelyOff } from './types.js';
 
 const NUM_PARTICLES = 8_000;
 const MAX_LADS = 16;
@@ -66,6 +66,7 @@ export class ParticleSystem {
   private targetColorData!: Float32Array;
   private targetColorAttr!: THREE.StorageBufferAttribute;
   private targetColorStorage: any;
+
 
   private computeInit: any;
   private computeUpdate: any;
@@ -150,6 +151,7 @@ export class ParticleSystem {
       this.targetColorData[i * 4 + 3] = 1;
     });
     this.targetColorAttr.needsUpdate = true;
+
   }
 
   private buildCompute(): void {
@@ -253,11 +255,14 @@ export class ParticleSystem {
     // Soft radial glow — bright centre, smooth gaussian-ish falloff
     const radial = uv().sub(vec2(0.5)).length().mul(2.0).clamp(0, 1);
     const glow   = float(1.0).sub(radial).pow(2.2);
-    const opacityNode = lifetimeFade.mul(glow);
+
+    const tgtIdx    = int(targetIdxBuf.element(i));
+    const flowColor = targetColorStorage.element(tgtIdx);
+
+    // flowColor.w is the enabled flag: 1.0 = visible, 0.0 = disabled (fades to invisible)
+    const opacityNode = lifetimeFade.mul(glow).mul(flowColor.w);
 
     // Color from target type, boosted for additive bloom effect
-    const tgtIdx   = int(targetIdxBuf.element(i));
-    const flowColor = targetColorStorage.element(tgtIdx);
     const colorNode = flowColor.rgb.mul(float(1.5));
 
     // Streak direction: normalize (target − spawn) for each particle
@@ -379,6 +384,17 @@ export class ParticleSystem {
     if (this.cachedTargetPixels.length) {
       this.updateTargetPositions(this.cachedTargetPixels);
     }
+  }
+
+  /** Update which targets are visible. Disabled targets fade their particles to opacity 0. */
+  updateToggles(effectiveToggles: LayerToggles, flowMeta: Record<string, FlowMeta>): void {
+    if (!this.ready) return;
+    FLOW_TYPES.forEach((ft: FlowType, i: number) => {
+      const confidence = flowMeta[ft]?.confidence ?? 'measured';
+      const enabled = !isLayerEffectivelyOff(effectiveToggles[ft], confidence);
+      this.targetColorData[i * 4 + 3] = enabled ? 1.0 : 0.0;
+    });
+    this.targetColorAttr.needsUpdate = true;
   }
 
   get backendName(): string {

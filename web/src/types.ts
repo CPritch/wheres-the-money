@@ -125,3 +125,73 @@ export const FLOW_COLORS_HEX: Record<FlowType, string> = {
   council_tax:  '#45ff88',
   unaccounted:  '#6060a0',
 };
+
+// ── Layer toggles ────────────────────────────────────────────────────────────
+
+export type LayerToggleState = 'off' | 'raw_only' | 'on';
+export type LayerToggles = Record<FlowType, LayerToggleState>;
+
+/** Flows with any modelling/estimation component — these support tri-state toggles. */
+export const LAYER_HAS_MODELLING: Record<FlowType, boolean> = {
+  hmrc:         true,   // fully modelled
+  water:        true,   // estimated
+  energy:       true,   // fully modelled
+  council_tax:  false,  // measured
+  unaccounted:  false,  // measured arithmetic residual
+};
+
+export const DEFAULT_TOGGLES: LayerToggles = {
+  hmrc:         'on',
+  water:        'on',
+  energy:       'on',
+  council_tax:  'on',
+  unaccounted:  'on',
+};
+
+export function isLayerEffectivelyOff(
+  state: LayerToggleState,
+  confidence: string,
+): boolean {
+  return state === 'off' || (state === 'raw_only' && confidence !== 'measured');
+}
+
+/** Apply the global raw-only master switch on top of per-layer toggle states. */
+export function resolveEffectiveToggles(
+  toggles: LayerToggles,
+  rawOnly: boolean,
+  flowMeta: Record<string, FlowMeta>,
+): LayerToggles {
+  if (!rawOnly) return toggles;
+  return Object.fromEntries(
+    FLOW_TYPES.map(ft => {
+      const confidence = flowMeta[ft]?.confidence ?? 'measured';
+      const state: LayerToggleState =
+        confidence !== 'measured' && toggles[ft] !== 'off' ? 'raw_only' : toggles[ft];
+      return [ft, state];
+    }),
+  ) as LayerToggles;
+}
+
+/** Per-flow display amounts adjusted for the current toggle state.
+ *  Unaccounted grows to absorb any flows that are toggled off. */
+export function computeDisplayAmounts(
+  bundle: FlowBundle,
+  effectiveToggles: LayerToggles,
+): Record<FlowType, number> {
+  const result = {} as Record<FlowType, number>;
+  const nonUnaccounted: FlowType[] = ['hmrc', 'water', 'energy', 'council_tax'];
+  const totalPayroll = bundle.lads.reduce((s, l) => s + l.total_payroll_estimate_gbp, 0);
+  let visibleSum = 0;
+
+  for (const ft of nonUnaccounted) {
+    const total = bundle.lads.reduce((s, l) => s + (l.flows[FLOW_AMOUNT_KEY[ft]] as number), 0);
+    const confidence = bundle.flow_meta[ft]?.confidence ?? 'measured';
+    const eff = isLayerEffectivelyOff(effectiveToggles[ft], confidence) ? 0 : total;
+    result[ft] = eff;
+    visibleSum += eff;
+  }
+
+  const adjUnaccounted = Math.max(0, totalPayroll - visibleSum);
+  result.unaccounted = effectiveToggles.unaccounted === 'off' ? 0 : adjUnaccounted;
+  return result;
+}

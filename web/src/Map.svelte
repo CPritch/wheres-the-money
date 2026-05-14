@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import maplibregl from 'maplibre-gl';
-  import type { FlowBundle, FlowType, LadData } from './types';
+  import type { FlowBundle, FlowType, LadData, LayerToggles } from './types';
   import { FLOW_COLORS_HEX, FLOW_AMOUNT_KEY } from './types';
   import { ParticleSystem } from './ParticleSystem';
 
-  const { flowBundle, onFlowSelect, onLadClick }: {
+  const { flowBundle, resolvedToggles, displayAmounts, onFlowSelect, onLadClick }: {
     flowBundle: FlowBundle | null;
+    resolvedToggles: LayerToggles;
+    displayAmounts: Record<FlowType, number> | null;
     onFlowSelect?: (type: FlowType) => void;
     onLadClick?: (lad: LadData) => void;
   } = $props();
@@ -63,6 +65,12 @@
         l => centroidByCode.get(l.lad_code) ?? ([0.75, 51.25] as [number, number])
       );
       particleSystem.setData(flowBundle, map, centroids, getTargetPixels());
+    }
+  });
+
+  $effect(() => {
+    if (particleSystem && flowBundle) {
+      particleSystem.updateToggles(resolvedToggles, flowBundle.flow_meta as Record<string, any>);
     }
   });
 
@@ -236,14 +244,16 @@
   {#if flowBundle}
     {#each TARGET_LAYOUT as [type, fx, fy]}
       {@const meta = flowBundle.flow_meta[type]}
-      {@const amount = flowTotal(flowBundle, FLOW_AMOUNT_KEY[type])}
+      {@const amount = displayAmounts ? displayAmounts[type] : flowTotal(flowBundle, FLOW_AMOUNT_KEY[type])}
       {@const color = FLOW_COLORS_HEX[type]}
+      {@const dimmed = amount === 0}
       <button
         class="target-node"
         class:target-right={fx > 0.5}
         class:target-left={fx < 0.5}
         class:target-center={fx === 0.50}
         class:target-hovered={hoveredTarget === type}
+        class:target-dimmed={dimmed}
         style="left: {fx * 100}%; top: {fy * 100}%; --c: {color};"
         onclick={() => onFlowSelect?.(type)}
         onmouseenter={() => hoveredTarget = type}
@@ -253,7 +263,9 @@
         <div class="target-dot"></div>
         <div class="target-body">
           <span class="target-label">{meta?.label ?? type}</span>
-          <span class="target-amount">{formatGbp(amount)}<span class="target-period">/mo</span></span>
+          <span class="target-amount">
+            {dimmed ? '—' : formatGbp(amount)}<span class="target-period">{dimmed ? '' : '/mo'}</span>
+          </span>
         </div>
       </button>
     {/each}
@@ -313,6 +325,12 @@
   .target-node:hover,
   .target-node.target-hovered {
     background: rgba(124, 131, 255, 0.06);
+  }
+
+  .target-dimmed {
+    opacity: 0.25;
+    filter: grayscale(0.6);
+    pointer-events: none;
   }
 
   /* Right-side nodes: dot on right, text on left */
