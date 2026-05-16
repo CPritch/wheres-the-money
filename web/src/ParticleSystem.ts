@@ -22,7 +22,10 @@ import type { Map as MapLibreMap, LngLatLike } from 'maplibre-gl';
 import type { FlowBundle, FlowMeta, FlowType, LayerToggles } from './types.js';
 import { FLOW_COLORS, FLOW_TYPES, isLayerEffectivelyOff } from './types.js';
 
-const NUM_PARTICLES = 8_000;
+/** Default particle count for desktop. Mobile callers pass a smaller value. */
+export const PARTICLE_COUNT_DESKTOP = 8_000;
+export const PARTICLE_COUNT_MOBILE  = 2_000;
+
 const MAX_LADS = 16;
 const NUM_TARGETS = 5;
 const MAX_LIFE = 4.0;    // seconds per particle journey
@@ -78,10 +81,12 @@ export class ParticleSystem {
 
   width: number;
   height: number;
+  private readonly numParticles: number;
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, numParticles: number = PARTICLE_COUNT_DESKTOP) {
     this.width = canvas.clientWidth || window.innerWidth;
     this.height = canvas.clientHeight || window.innerHeight;
+    this.numParticles = numParticles;
 
     this.renderer = new THREE.WebGPURenderer({ canvas, alpha: true, antialias: false });
     this.scene = new THREE.Scene();
@@ -105,7 +110,7 @@ export class ParticleSystem {
   }
 
   private buildBuffers(): void {
-    const N = NUM_PARTICLES;
+    const N = this.numParticles;
 
     // Per-particle GPU state
     this.positions = instancedArray(N, 'vec3');
@@ -155,7 +160,7 @@ export class ParticleSystem {
   }
 
   private buildCompute(): void {
-    const N = NUM_PARTICLES;
+    const N = this.numParticles;
     const maxLife  = uniform(MAX_LIFE);
     const spreadR  = uniform(SPREAD_R);
     const { positions, ages, targetIdxBuf, spawnPosBuf,
@@ -294,7 +299,7 @@ export class ParticleSystem {
     material.alphaToCoverage = false;
 
     const geometry = new THREE.PlaneGeometry(PARTICLE_PX, PARTICLE_PX);
-    const mesh = new THREE.InstancedMesh(geometry, material, NUM_PARTICLES);
+    const mesh = new THREE.InstancedMesh(geometry, material, this.numParticles);
     mesh.frustumCulled = false;
     this.scene.add(mesh);
   }
@@ -310,7 +315,7 @@ export class ParticleSystem {
 
     const lads  = bundle.lads;
     const total = lads.reduce((s, l) => s + l.total_payroll_estimate_gbp, 0);
-    const N     = NUM_PARTICLES;
+    const N     = this.numParticles;
 
     // Proportional particle allocation per LAD
     const counts = lads.map(l =>
