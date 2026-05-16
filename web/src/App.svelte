@@ -4,6 +4,7 @@
   import Masthead from './Masthead.svelte';
   import CategoryStrip from './CategoryStrip.svelte';
   import HowToRead from './HowToRead.svelte';
+  import HowToReadModal from './HowToReadModal.svelte';
   import FocusPanel from './FocusPanel.svelte';
   import FlowPanel from './FlowPanel.svelte';
   import FooterBar from './FooterBar.svelte';
@@ -36,6 +37,8 @@
   let panelSelection = $state<PanelSelection>(null);
   let focusedLad = $state<LadData | null>(null);
   let methodologyOpen = $state(false);
+  let infoModalOpen = $state(false);
+  let sheetExpanded = $state(false);
 
   let layerToggles = $state<LayerToggles>({ ...DEFAULT_TOGGLES });
   let rawOnly = $state(false);
@@ -81,6 +84,8 @@
     focusedLad = lad;
     // Don't open the floating flow panel for LAD clicks — focus panel handles it
     panelSelection = null;
+    // On mobile, expand the bottom sheet so the user sees the detail they just asked for
+    if (window.matchMedia('(max-width: 768px)').matches) sheetExpanded = true;
   }
 
   function handlePanelClose() {
@@ -107,6 +112,8 @@
     methodologyOpen = false;
     panelSelection = null;
     focusedLad = null;
+    infoModalOpen = false;
+    sheetExpanded = false;
   }
 }} />
 
@@ -124,6 +131,7 @@
     rawOnly={rawOnly}
     onCategoryToggle={handleCategoryToggle}
     onRawOnlyChange={handleRawOnlyChange}
+    onInfoOpen={() => infoModalOpen = true}
   />
 
   <main class="main-grid">
@@ -157,6 +165,8 @@
         bundle={flowBundle}
         focusedLad={focusedLad}
         glossary={glossary}
+        sheetExpanded={sheetExpanded}
+        onSheetToggle={() => sheetExpanded = !sheetExpanded}
         onMethodologyOpen={() => methodologyOpen = true}
         onClearFocus={handleClearFocus}
       />
@@ -181,6 +191,11 @@
     flowBundle={flowBundle}
     glossary={glossary}
     onClose={() => methodologyOpen = false}
+  />
+
+  <HowToReadModal
+    open={infoModalOpen}
+    onClose={() => infoModalOpen = false}
   />
 </div>
 
@@ -298,5 +313,28 @@
   /* MapLibre control overrides for the paper aesthetic */
   :global(.maplibregl-ctrl-attrib-button) {
     background-color: var(--paper-soft) !important;
+  }
+
+  /* ── Mobile layout ─────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .main-grid {
+      grid-template-columns: 1fr;
+    }
+
+    /* Left rail (HowToRead) is replaced by the (i) info modal */
+    .left-rail {
+      display: none;
+    }
+
+    /* Right rail wrapper becomes a fixed bottom sheet — let the panel
+       inside take over positioning */
+    .right-rail {
+      display: contents;
+    }
+
+    .map-caption {
+      padding: 0.3rem 0.9rem 0.4rem;
+      font-size: 0.72rem;
+    }
   }
 </style>

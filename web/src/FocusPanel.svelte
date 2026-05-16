@@ -14,12 +14,16 @@
     bundle,
     focusedLad,
     glossary,
+    sheetExpanded = false,
+    onSheetToggle,
     onMethodologyOpen,
     onClearFocus,
   }: {
     bundle: FlowBundle | null;
     focusedLad: LadData | null;
     glossary: Record<string, string>;
+    sheetExpanded?: boolean;
+    onSheetToggle?: () => void;
     onMethodologyOpen: () => void;
     onClearFocus: () => void;
   } = $props();
@@ -73,10 +77,27 @@
   );
 </script>
 
-<aside class="focus-panel">
+<aside
+  class="focus-panel"
+  class:sheet-expanded={sheetExpanded}
+>
   {#if bundle && view}
     {@const src = bundle.source}
 
+    <button
+      class="sheet-handle"
+      onclick={() => onSheetToggle?.()}
+      aria-label={sheetExpanded ? 'Collapse details' : 'Expand details'}
+    >
+      <span class="sheet-grip"></span>
+      <span class="sheet-summary">
+        <span class="sheet-summary-title">{view.title}</span>
+        <span class="sheet-summary-amount">{formatGbp(view.payroll)}<span class="sheet-summary-period">/m</span></span>
+      </span>
+      <span class="sheet-chevron" class:sheet-chevron-up={sheetExpanded}>›</span>
+    </button>
+
+    <div class="sheet-content">
     <p class="kicker">
       {#if view.kind === 'lad'}
         The district in focus
@@ -148,6 +169,7 @@
       <span class="src-fetched">Fetched {formatDate(src.fetched_at)}</span>
       <button class="methodology-link" onclick={onMethodologyOpen}>Methodology &rsaquo;</button>
     </div>
+    </div><!-- /sheet-content -->
   {/if}
 </aside>
 
@@ -165,6 +187,9 @@
     scrollbar-width: thin;
     scrollbar-color: var(--rule) transparent;
   }
+
+  .sheet-handle { display: none; }
+  .sheet-content { display: contents; }
 
   .kicker,
   .section-kicker {
@@ -425,5 +450,121 @@
 
   .methodology-link:hover {
     text-decoration-color: var(--ink);
+  }
+
+  /* ── Mobile bottom-sheet ───────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .focus-panel {
+      position: fixed;
+      inset: auto 0 0 0;
+      z-index: 15;
+      height: 72px;
+      max-height: 72px;
+      overflow: hidden;
+      padding: 0;
+      border-left: none;
+      border-top: 2px solid var(--ink);
+      box-shadow: 0 -2px 0 var(--rule);
+      transition: max-height 0.28s ease, height 0.28s ease;
+    }
+
+    .focus-panel.sheet-expanded {
+      height: 78vh;
+      max-height: 78vh;
+      overflow-y: auto;
+    }
+
+    .sheet-handle {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.5rem 1rem 0.6rem;
+      width: 100%;
+      background: var(--paper);
+      border: none;
+      border-bottom: 1px solid var(--rule);
+      cursor: pointer;
+      font-family: inherit;
+      color: inherit;
+      text-align: left;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    .sheet-grip {
+      position: absolute;
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 38px;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--ink-mute);
+      opacity: 0.55;
+    }
+
+    .sheet-summary {
+      flex: 1;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.6rem;
+      margin-top: 0.25rem;
+      min-width: 0;
+    }
+
+    .sheet-summary-title {
+      font-family: 'EB Garamond', Georgia, serif;
+      font-style: italic;
+      font-weight: 500;
+      font-size: 1.1rem;
+      color: var(--ink);
+      letter-spacing: -0.005em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sheet-summary-amount {
+      font-family: 'EB Garamond', Georgia, serif;
+      font-style: italic;
+      font-weight: 500;
+      font-size: 1.05rem;
+      color: var(--ink);
+      flex-shrink: 0;
+    }
+
+    .sheet-summary-period {
+      font-size: 0.7rem;
+      color: var(--ink-mute);
+      margin-left: 0.1rem;
+    }
+
+    .sheet-chevron {
+      font-family: 'EB Garamond', Georgia, serif;
+      font-size: 1.3rem;
+      color: var(--ink-mute);
+      transform: rotate(-90deg);
+      transition: transform 0.2s ease;
+      margin-top: 0.25rem;
+      flex-shrink: 0;
+    }
+
+    .sheet-chevron-up {
+      transform: rotate(90deg);
+    }
+
+    /* When expanded, the inner content gets its own padding */
+    .focus-panel.sheet-expanded .sheet-content {
+      display: flex;
+      flex-direction: column;
+      padding: 0.75rem 1rem 1.5rem 1rem;
+    }
+
+    /* When peek, hide the inner content body so only the handle shows */
+    .focus-panel:not(.sheet-expanded) .sheet-content {
+      display: none;
+    }
   }
 </style>

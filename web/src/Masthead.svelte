@@ -116,4 +116,46 @@
     color: var(--ink-mute);
     margin: 0.25rem 0 0;
   }
+
+  @media (max-width: 768px) {
+    .masthead {
+      flex-direction: column;
+      align-items: stretch;
+      padding: 0.85rem 1.1rem 0.7rem;
+      gap: 0.5rem;
+    }
+
+    .masthead-right {
+      align-items: flex-start;
+      flex-direction: row;
+      align-items: baseline;
+      gap: 0.55rem;
+      border-top: 1px solid var(--rule);
+      padding-top: 0.5rem;
+    }
+
+    .title {
+      font-size: clamp(1.75rem, 7vw, 2.2rem);
+    }
+
+    .tagline {
+      font-size: 0.85rem;
+      padding-top: 0.25rem;
+      margin-top: 0.1rem;
+    }
+
+    .big-amount {
+      font-size: clamp(1.6rem, 6.5vw, 2rem);
+    }
+
+    .big-period {
+      font-size: 0.9rem;
+    }
+
+    .big-caption {
+      margin: 0;
+      font-size: 0.6rem;
+      letter-spacing: 0.14em;
+    }
+  }
 </style>

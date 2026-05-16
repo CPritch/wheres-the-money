@@ -15,6 +15,7 @@
     rawOnly,
     onCategoryToggle,
     onRawOnlyChange,
+    onInfoOpen,
   }: {
     categoryAmounts: Record<Category, number>;
     totalPayroll: number;
@@ -22,6 +23,7 @@
     rawOnly: boolean;
     onCategoryToggle: (cat: Category, newState: LayerToggleState) => void;
     onRawOnlyChange: (v: boolean) => void;
+    onInfoOpen?: () => void;
   } = $props();
 
   function pct(n: number): string {
@@ -64,16 +66,26 @@
     {/each}
   </div>
 
-  <div class="focus-mode">
-    <span class="focus-label">Focus mode</span>
-    <button
-      class="focus-toggle"
-      class:focus-toggle-on={rawOnly}
-      onclick={() => onRawOnlyChange(!rawOnly)}
-      title="Focus on raw, directly-measured flows only — modelled and estimated flows fade away"
-    >
-      {rawOnly ? 'ON' : 'OFF'}
-    </button>
+  <div class="controls">
+    {#if onInfoOpen}
+      <button
+        class="info-btn"
+        onclick={onInfoOpen}
+        aria-label="How to read the map"
+        title="How to read the map"
+      >i</button>
+    {/if}
+    <div class="focus-mode">
+      <span class="focus-label">Focus mode</span>
+      <button
+        class="focus-toggle"
+        class:focus-toggle-on={rawOnly}
+        onclick={() => onRawOnlyChange(!rawOnly)}
+        title="Focus on raw, directly-measured flows only — modelled and estimated flows fade away"
+      >
+        {rawOnly ? 'ON' : 'OFF'}
+      </button>
+    </div>
   </div>
 </nav>
 
@@ -161,6 +173,37 @@
     letter-spacing: 0.04em;
   }
 
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-shrink: 0;
+  }
+
+  .info-btn {
+    display: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'EB Garamond', Georgia, serif;
+    font-style: italic;
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .info-btn:hover {
+    background: var(--ink);
+    color: var(--paper);
+  }
+
   .focus-mode {
     display: flex;
     align-items: center;
@@ -196,5 +239,45 @@
   .focus-toggle-on {
     background: var(--ink);
     color: var(--paper);
+  }
+
+  @media (max-width: 768px) {
+    .category-strip {
+      flex-wrap: wrap;
+      gap: 0.5rem 0.85rem;
+      padding: 0.45rem 1rem;
+      align-items: center;
+    }
+
+    .strip-label {
+      font-size: 0.625rem;
+    }
+
+    .chips {
+      flex: 1 1 100%;
+      order: 2;
+      gap: 0.85rem;
+      row-gap: 0.3rem;
+    }
+
+    .chip {
+      gap: 0.3rem;
+    }
+
+    .chip-amount { font-size: 0.85rem; }
+    .chip-pct    { font-size: 0.625rem; }
+
+    .controls {
+      order: 1;
+      margin-left: auto;
+    }
+
+    .info-btn {
+      display: inline-flex;
+    }
+
+    .focus-label {
+      font-size: 0.6rem;
+    }
   }
 </style>

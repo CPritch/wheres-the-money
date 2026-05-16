@@ -3,7 +3,7 @@
   import maplibregl from 'maplibre-gl';
   import type { FlowBundle, FlowType, LadData, LayerToggles } from './types';
   import { FLOW_COLORS_HEX, formatGbp } from './types';
-  import { ParticleSystem } from './ParticleSystem';
+  import { ParticleSystem, PARTICLE_COUNT_DESKTOP, PARTICLE_COUNT_MOBILE } from './ParticleSystem';
 
   const {
     flowBundle,
@@ -26,13 +26,33 @@
   const KENT_ZOOM = 9;
 
   // Target node layout: [flowType, x_fraction, y_fraction] in HTML coords (y=0 at top)
-  const TARGET_LAYOUT: [FlowType, number, number][] = [
+  const TARGET_LAYOUT_DESKTOP: [FlowType, number, number][] = [
     ['hmrc',         0.88, 0.16],
     ['water',        0.93, 0.42],
     ['energy',       0.93, 0.66],
     ['council_tax',  0.08, 0.50],
     ['unaccounted',  0.50, 0.92],
   ];
+
+  // Mobile layout: pull right-edge nodes inward so the long labels fit, and
+  // tighten the vertical spread to leave room for the bottom-sheet peek bar.
+  const TARGET_LAYOUT_MOBILE: [FlowType, number, number][] = [
+    ['hmrc',         0.78, 0.10],
+    ['water',        0.82, 0.36],
+    ['energy',       0.82, 0.62],
+    ['council_tax',  0.18, 0.42],
+    ['unaccounted',  0.50, 0.88],
+  ];
+
+  let isMobile = $state(
+    typeof window !== 'undefined'
+      ? window.matchMedia('(max-width: 768px)').matches
+      : false
+  );
+
+  const TARGET_LAYOUT = $derived(
+    isMobile ? TARGET_LAYOUT_MOBILE : TARGET_LAYOUT_DESKTOP
+  );
 
   let mapContainer: HTMLDivElement;
   let particleCanvas: HTMLCanvasElement;
@@ -47,6 +67,8 @@
 
   let _ps: ParticleSystem | null = null;
   let _resizeObs: ResizeObserver | null = null;
+  let _mqMobile: MediaQueryList | null = null;
+  let _mqHandler: ((e: MediaQueryListEvent) => void) | null = null;
 
   function getTargetPixels(): [number, number][] {
     const w = mapContainer?.clientWidth  ?? window.innerWidth;
@@ -78,6 +100,13 @@
   $effect(() => {
     void focusedLadCode;
     if (mapLoaded && flowBundle) applyFocus(flowBundle);
+  });
+
+  // Re-push target positions to the particle system when the layout switches
+  // between desktop and mobile.
+  $effect(() => {
+    void TARGET_LAYOUT;
+    if (particleSystem) particleSystem.updateTargetPositions(getTargetPixels());
   });
 
   function computeCentroid(feature: GeoJSON.Feature): [number, number] {
@@ -265,7 +294,10 @@
       mapLoaded = true;
     });
 
-    _ps = new ParticleSystem(particleCanvas);
+    const particleCount = window.matchMedia('(max-width: 768px)').matches
+      ? PARTICLE_COUNT_MOBILE
+      : PARTICLE_COUNT_DESKTOP;
+    _ps = new ParticleSystem(particleCanvas, particleCount);
     await _ps.init();
     particleSystem = _ps;
 
@@ -279,10 +311,15 @@
       }
     });
     _resizeObs.observe(mapContainer);
+
+    _mqMobile = window.matchMedia('(max-width: 768px)');
+    _mqHandler = (e: MediaQueryListEvent) => { isMobile = e.matches; };
+    _mqMobile.addEventListener('change', _mqHandler);
   });
 
   onDestroy(() => {
     _resizeObs?.disconnect();
+    if (_mqMobile && _mqHandler) _mqMobile.removeEventListener('change', _mqHandler);
     _ps?.dispose();
     map?.remove();
   });
@@ -521,5 +558,46 @@
 
   :global(.maplibregl-ctrl-attrib a) {
     color: #5b5346 !important;
+  }
+
+  /* ── Mobile ─────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .target-node {
+      gap: 0.3rem;
+      padding: 0.2rem 0.3rem;
+      max-width: 7.5rem;
+    }
+
+    .target-label {
+      font-size: 0.55rem;
+      letter-spacing: 0.08em;
+    }
+
+    .target-amount {
+      font-size: 0.85rem;
+    }
+
+    .target-period {
+      font-size: 0.55rem;
+    }
+
+    .target-mark {
+      width: 7px;
+      height: 7px;
+    }
+
+    .mark-modelled {
+      width: 10px;
+      height: 2px;
+    }
+
+    .tooltip {
+      font-size: 0.7rem;
+      padding: 0.3rem 0.55rem;
+    }
+
+    .tooltip-name {
+      font-size: 0.85rem;
+    }
   }
 </style>

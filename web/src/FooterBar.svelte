@@ -244,4 +244,31 @@
     font-family: 'EB Garamond', Georgia, serif;
     font-size: 0.7rem;
   }
+
+  /* ── Mobile ─────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .timeline-row { display: none; }
+
+    .credits-row {
+      padding: 0.4rem 0.9rem 0.5rem;
+      flex-wrap: wrap;
+      row-gap: 0.2rem;
+      font-size: 0.6rem;
+      /* leave room for the bottom-sheet peek (72px) so the credits row
+         doesn't get covered by the sheet */
+      padding-bottom: calc(72px + 0.5rem);
+    }
+
+    /* The MapLibre attribution already states Carto + OSM in the map
+       chrome on mobile, so the per-app attribution caption is redundant
+       in the credits row. Drop it to keep the row to a single line. */
+    .credit-spacer,
+    .credit-attrib {
+      display: none;
+    }
+
+    .credit-tag {
+      display: none;
+    }
+  }
 </style>
