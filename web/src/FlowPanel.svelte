@@ -395,4 +395,28 @@
     font-size: 0.78rem;
     color: var(--ink-mute);
   }
+
+  /* ── Mobile ─────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .flow-panel {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      right: auto;
+      margin-right: 0;
+      transform: translate(-50%, -50%);
+      width: calc(100vw - 1.5rem);
+      max-width: 24rem;
+      max-height: 80vh;
+      z-index: 25;
+    }
+
+    .panel-title {
+      font-size: 1.4rem;
+    }
+
+    .amount-value {
+      font-size: 1.55rem;
+    }
+  }
 </style>

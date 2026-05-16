@@ -377,4 +377,41 @@
     color: var(--ink-soft);
     margin: 0;
   }
+
+  /* ── Mobile ─────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .drawer {
+      height: 92vh;
+      z-index: 40;
+    }
+
+    .drawer-overlay { z-index: 39; }
+
+    .drawer-header {
+      padding: 0.75rem 1rem 0.6rem;
+    }
+
+    .drawer-title {
+      font-size: 1.4rem;
+    }
+
+    .drawer-body {
+      padding: 0.5rem 1rem 1.5rem;
+    }
+
+    .method-section {
+      padding: 0.5rem 0;
+    }
+
+    .method-kicker {
+      font-size: 1rem;
+    }
+
+    .src-link  { font-size: 0.85rem; }
+    .src-meta  { font-size: 0.65rem; }
+
+    .method-text {
+      font-size: 0.85rem;
+    }
+  }
 </style>
