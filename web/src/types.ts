@@ -59,6 +59,7 @@ export type FlowType = 'hmrc' | 'water' | 'energy' | 'council_tax' | 'unaccounte
 export type PanelSelection =
   | { kind: 'flow'; type: FlowType }
   | { kind: 'lad'; lad: LadData }
+  | { kind: 'overall' }
   | null;
 
 export interface TextSegment {
@@ -73,6 +74,72 @@ export const FLOW_AMOUNT_KEY: Record<FlowType, keyof FlowBreakdown> = {
   energy:      'energy_gbp',
   council_tax: 'council_tax_gbp',
   unaccounted: 'unaccounted_gbp',
+};
+
+// ── Categories ──────────────────────────────────────────────────────────────
+// Rule I (System reference): colour belongs to the category, never the flow.
+// Phase 1 ships three categories — the rest (commerce, capital, local civic)
+// are deferred per the plan and are not rendered in Phase 1.
+
+export type Category = 'statutory' | 'utilities' | 'unaccounted';
+
+export const CATEGORY_OF: Record<FlowType, Category> = {
+  hmrc:        'statutory',
+  council_tax: 'statutory',
+  water:       'utilities',
+  energy:      'utilities',
+  unaccounted: 'unaccounted',
+};
+
+export const CATEGORY_LABELS: Record<Category, string> = {
+  statutory:   'Statutory',
+  utilities:   'Utilities',
+  unaccounted: 'Unaccounted',
+};
+
+/** Editorial palette from the canonical design (warm cream ground). */
+export const CATEGORY_COLORS_HEX: Record<Category, string> = {
+  statutory:   '#A23D2E',  // brick red
+  utilities:   '#234F66',  // deep navy
+  unaccounted: '#6B6358',  // warm slate
+};
+
+/** Same colours as 0-1 RGB tuples for the particle system. */
+export const CATEGORY_COLORS: Record<Category, [number, number, number]> = {
+  statutory:   [0.635, 0.239, 0.180],
+  utilities:   [0.137, 0.310, 0.400],
+  unaccounted: [0.420, 0.388, 0.345],
+};
+
+/** Per-flow particle colour = colour of the flow's category (rule I). */
+export const FLOW_COLORS: Record<FlowType, [number, number, number]> = {
+  hmrc:        CATEGORY_COLORS.statutory,
+  council_tax: CATEGORY_COLORS.statutory,
+  water:       CATEGORY_COLORS.utilities,
+  energy:      CATEGORY_COLORS.utilities,
+  unaccounted: CATEGORY_COLORS.unaccounted,
+};
+
+export const FLOW_COLORS_HEX: Record<FlowType, string> = {
+  hmrc:        CATEGORY_COLORS_HEX.statutory,
+  council_tax: CATEGORY_COLORS_HEX.statutory,
+  water:       CATEGORY_COLORS_HEX.utilities,
+  energy:      CATEGORY_COLORS_HEX.utilities,
+  unaccounted: CATEGORY_COLORS_HEX.unaccounted,
+};
+
+// ── Confidence shapes ───────────────────────────────────────────────────────
+// Rule II (System reference): confidence belongs to the shape, never the colour.
+//   measured   → filled solid dot   (•)
+//   estimated  → hollow ring        (○)
+//   modelled   → dashed segment     (− − −)
+
+export type Confidence = 'measured' | 'estimated' | 'modelled';
+
+export const CONFIDENCE_GLYPH: Record<Confidence, string> = {
+  measured:  '•',
+  estimated: '◦',
+  modelled:  '—',  // an em-dash on its own; visually paired with dashes in CSS
 };
 
 export function parseMethodologyText(text: string, glossary: Record<string, string>): TextSegment[] {
@@ -110,20 +177,19 @@ export function parseMethodologyText(text: string, glossary: Record<string, stri
 
 export const FLOW_TYPES: FlowType[] = ['hmrc', 'water', 'energy', 'council_tax', 'unaccounted'];
 
-export const FLOW_COLORS: Record<FlowType, [number, number, number]> = {
-  hmrc:         [1.00, 0.25, 0.35],  // #ff4059 — hot red
-  water:        [0.00, 0.82, 1.00],  // #00d1ff — electric cyan
-  energy:       [1.00, 0.85, 0.00],  // #ffd900 — electric amber
-  council_tax:  [0.27, 1.00, 0.53],  // #45ff88 — electric green
-  unaccounted:  [0.38, 0.38, 0.63],  // #6060a0 — muted slate
-};
+/** Display order: Statutory rows first, then Utilities, then Unaccounted. */
+export const FLOW_TYPES_ORDERED: FlowType[] = [
+  'hmrc', 'council_tax',         // statutory
+  'water', 'energy',             // utilities
+  'unaccounted',                 // unaccounted
+];
 
-export const FLOW_COLORS_HEX: Record<FlowType, string> = {
-  hmrc:         '#ff4059',
-  water:        '#00d1ff',
-  energy:       '#ffd900',
-  council_tax:  '#45ff88',
-  unaccounted:  '#6060a0',
+export const CATEGORY_ORDER: Category[] = ['statutory', 'utilities', 'unaccounted'];
+
+export const FLOWS_BY_CATEGORY: Record<Category, FlowType[]> = {
+  statutory:   ['hmrc', 'council_tax'],
+  utilities:   ['water', 'energy'],
+  unaccounted: ['unaccounted'],
 };
 
 // ── Layer toggles ────────────────────────────────────────────────────────────
@@ -194,4 +260,27 @@ export function computeDisplayAmounts(
   const adjUnaccounted = Math.max(0, totalPayroll - visibleSum);
   result.unaccounted = effectiveToggles.unaccounted === 'off' ? 0 : adjUnaccounted;
   return result;
+}
+
+export function formatGbp(n: number): string {
+  if (n >= 1_000_000_000) return `£${(n / 1_000_000_000).toFixed(2)}bn`;
+  if (n >= 100_000_000)   return `£${(n / 1_000_000).toFixed(0)}m`;
+  if (n >= 1_000_000)     return `£${(n / 1_000_000).toFixed(1)}m`;
+  if (n >= 1_000)         return `£${(n / 1_000).toFixed(0)}k`;
+  return `£${n.toFixed(0)}`;
+}
+
+export function computeCategoryAmounts(
+  displayAmounts: Record<FlowType, number>,
+): Record<Category, number> {
+  return {
+    statutory:   displayAmounts.hmrc + displayAmounts.council_tax,
+    utilities:   displayAmounts.water + displayAmounts.energy,
+    unaccounted: displayAmounts.unaccounted,
+  };
+}
+
+/** Sum of all flow amounts (also equals approximate total payroll when nothing is hidden). */
+export function totalAmount(amounts: Record<FlowType, number>): number {
+  return (Object.values(amounts) as number[]).reduce((s, v) => s + v, 0);
 }
