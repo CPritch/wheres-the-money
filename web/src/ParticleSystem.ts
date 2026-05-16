@@ -25,11 +25,11 @@ import { FLOW_COLORS, FLOW_TYPES, isLayerEffectivelyOff } from './types.js';
 const NUM_PARTICLES = 8_000;
 const MAX_LADS = 16;
 const NUM_TARGETS = 5;
-const MAX_LIFE = 3.5;    // seconds per particle journey
-const SPREAD_R = 7;      // pixel spawn scatter radius at centroid
+const MAX_LIFE = 4.0;    // seconds per particle journey
+const SPREAD_R = 6;      // pixel spawn scatter radius at centroid
 const PARTICLE_PX = 5;   // base sprite size in CSS pixels
-const STREAK_W = 0.45;   // perpendicular-to-motion scale — thin
-const STREAK_L = 3.0;    // along-motion scale — distinct streak
+const STREAK_W = 0.55;   // perpendicular-to-motion scale — thin
+const STREAK_L = 2.4;    // along-motion scale — distinct streak
 
 export class ParticleSystem {
   private renderer: InstanceType<typeof THREE.WebGPURenderer>;
@@ -252,9 +252,11 @@ export class ParticleSystem {
     const fadeOut = age.sub(0.85).div(0.15).clamp(0, 1).oneMinus();
     const lifetimeFade = fadeIn.mul(fadeOut);
 
-    // Soft radial glow — bright centre, smooth gaussian-ish falloff
+    // Solid disc with a soft outer edge — flat-top until ~60% of the radius,
+    // then a smoothstep falloff to the rim. Reads as a printed ink mark on paper.
     const radial = uv().sub(vec2(0.5)).length().mul(2.0).clamp(0, 1);
-    const glow   = float(1.0).sub(radial).pow(2.2);
+    const t      = radial.sub(float(0.55)).div(float(0.45)).clamp(0, 1);
+    const glow   = float(1.0).sub(t.mul(t).mul(float(3).sub(t.mul(float(2)))));
 
     const tgtIdx    = int(targetIdxBuf.element(i));
     const flowColor = targetColorStorage.element(tgtIdx);
@@ -262,8 +264,8 @@ export class ParticleSystem {
     // flowColor.w is the enabled flag: 1.0 = visible, 0.0 = disabled (fades to invisible)
     const opacityNode = lifetimeFade.mul(glow).mul(flowColor.w);
 
-    // Color from target type, boosted for additive bloom effect
-    const colorNode = flowColor.rgb.mul(float(1.5));
+    // Deepen the ink slightly for higher contrast against the cream ground
+    const colorNode = flowColor.rgb.mul(float(0.85));
 
     // Streak direction: normalize (target − spawn) for each particle
     const spawn   = spawnPosBuf.element(i);
@@ -284,7 +286,7 @@ export class ParticleSystem {
     const material = new THREE.MeshBasicNodeMaterial({
       transparent: true,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      blending: THREE.NormalBlending,
     });
     material.positionNode = streakOffset.add(positions.toAttribute());
     material.colorNode    = colorNode;

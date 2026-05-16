@@ -2,32 +2,36 @@
   import { onMount, onDestroy } from 'svelte';
   import maplibregl from 'maplibre-gl';
   import type { FlowBundle, FlowType, LadData, LayerToggles } from './types';
-  import { FLOW_COLORS_HEX, FLOW_AMOUNT_KEY } from './types';
+  import { FLOW_COLORS_HEX, formatGbp } from './types';
   import { ParticleSystem } from './ParticleSystem';
 
-  const { flowBundle, resolvedToggles, displayAmounts, onFlowSelect, onLadClick }: {
+  const {
+    flowBundle,
+    resolvedToggles,
+    displayAmounts,
+    focusedLadCode,
+    onFlowSelect,
+    onLadClick,
+  }: {
     flowBundle: FlowBundle | null;
     resolvedToggles: LayerToggles;
     displayAmounts: Record<FlowType, number> | null;
+    focusedLadCode: string | null;
     onFlowSelect?: (type: FlowType) => void;
     onLadClick?: (lad: LadData) => void;
   } = $props();
 
-  const STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+  const STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
   const KENT_CENTER: [number, number] = [0.75, 51.25];
   const KENT_ZOOM = 9;
 
-  const PAY_MIN = 100_000_000;
-  const PAY_MAX = 355_000_000;
-
   // Target node layout: [flowType, x_fraction, y_fraction] in HTML coords (y=0 at top)
-  // Three destinations stack on the right, council tax on the left, unaccounted at bottom.
   const TARGET_LAYOUT: [FlowType, number, number][] = [
-    ['hmrc',         0.87, 0.13],
-    ['water',        0.92, 0.37],
-    ['energy',       0.92, 0.61],
-    ['council_tax',  0.08, 0.47],
-    ['unaccounted',  0.50, 0.90],
+    ['hmrc',         0.88, 0.16],
+    ['water',        0.93, 0.42],
+    ['energy',       0.93, 0.66],
+    ['council_tax',  0.08, 0.50],
+    ['unaccounted',  0.50, 0.92],
   ];
 
   let mapContainer: HTMLDivElement;
@@ -50,15 +54,11 @@
     return TARGET_LAYOUT.map(([, fx, fy]) => [fx * w, fy * h]);
   }
 
-  function flowTotal(bundle: FlowBundle, key: keyof FlowBundle['lads'][0]['flows']): number {
-    return bundle.lads.reduce((s, l) => s + (l.flows[key] as number), 0);
-  }
-
   let hoveredTarget = $state<FlowType | null>(null);
 
   $effect(() => {
     if (mapLoaded && flowBundle) {
-      applyChoropleth(flowBundle);
+      applyFocus(flowBundle);
     }
     if (mapLoaded && flowBundle && particleSystem) {
       const centroids = flowBundle.lads.map(
@@ -72,6 +72,12 @@
     if (particleSystem && flowBundle) {
       particleSystem.updateToggles(resolvedToggles, flowBundle.flow_meta as Record<string, any>);
     }
+  });
+
+  // Re-apply focused district styling when selection changes.
+  $effect(() => {
+    void focusedLadCode;
+    if (mapLoaded && flowBundle) applyFocus(flowBundle);
   });
 
   function computeCentroid(feature: GeoJSON.Feature): [number, number] {
@@ -90,41 +96,24 @@
     return [sumLon / ring.length, sumLat / ring.length];
   }
 
-  function formatGbp(n: number): string {
-    if (n >= 1_000_000_000) return `£${(n / 1_000_000_000).toFixed(1)}bn`;
-    return `£${(n / 1_000_000).toFixed(0)}m`;
-  }
-
-  function applyChoropleth(bundle: FlowBundle) {
+  function applyFocus(bundle: FlowBundle) {
     if (!rawGeoJSON || !map.getSource('lad')) return;
     const payrollByCode = new Map(bundle.lads.map(l => [l.lad_code, l.total_payroll_estimate_gbp]));
     const enriched: GeoJSON.FeatureCollection = {
       ...rawGeoJSON,
-      features: rawGeoJSON.features.map(f => ({
-        ...f,
-        properties: {
-          ...f.properties,
-          payroll: payrollByCode.get((f.properties as Record<string, string>)['LAD24CD']) ?? null,
-        },
-      })),
+      features: rawGeoJSON.features.map(f => {
+        const code = (f.properties as Record<string, string>)['LAD24CD'];
+        return {
+          ...f,
+          properties: {
+            ...f.properties,
+            payroll:  payrollByCode.get(code) ?? null,
+            focused:  focusedLadCode === code,
+          },
+        };
+      }),
     };
     (map.getSource('lad') as maplibregl.GeoJSONSource).setData(enriched);
-    map.setPaintProperty('lad-fill', 'fill-color', [
-      'case',
-      ['!=', ['get', 'payroll'], null],
-      ['interpolate', ['linear'], ['get', 'payroll'],
-        PAY_MIN, '#0e1042',
-        (PAY_MIN + PAY_MAX) / 2, '#3d45c0',
-        PAY_MAX, '#7c83ff',
-      ],
-      '#0e1042',
-    ]);
-    map.setPaintProperty('lad-fill', 'fill-opacity', [
-      'case',
-      ['boolean', ['feature-state', 'hover'], false],
-      0.82,
-      0.45,
-    ]);
   }
 
   onMount(async () => {
@@ -147,9 +136,31 @@
     });
 
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
     map.on('load', () => {
+      // Cream-paper tint over the basemap so the design's editorial ground reads as paper.
+      // We do this by overriding the basemap's background and dialing back vivid features.
+      try {
+        map.setPaintProperty('background', 'background-color', '#efe7d2');
+      } catch {}
+
+      // Soften any vivid water / road colours from positron toward the paper palette.
+      const style = map.getStyle();
+      for (const layer of style.layers ?? []) {
+        if (layer.type === 'fill' && /water|park|landcover|landuse/i.test(layer.id)) {
+          try { map.setPaintProperty(layer.id, 'fill-color', '#e6dcc4'); } catch {}
+          try { map.setPaintProperty(layer.id, 'fill-opacity', 0.55); } catch {}
+        }
+        if (layer.type === 'line' && /road|highway|bridge|tunnel/i.test(layer.id)) {
+          try { map.setPaintProperty(layer.id, 'line-color', '#d8cdb1'); } catch {}
+          try { map.setPaintProperty(layer.id, 'line-opacity', 0.45); } catch {}
+        }
+        if (layer.type === 'symbol') {
+          try { map.setPaintProperty(layer.id, 'text-color', '#8a7f6a'); } catch {}
+          try { map.setPaintProperty(layer.id, 'text-halo-color', '#efe7d2'); } catch {}
+        }
+      }
+
       map.addSource('lad', { type: 'geojson', data: rawGeoJSON!, generateId: true });
 
       map.addLayer({
@@ -157,8 +168,18 @@
         type: 'fill',
         source: 'lad',
         paint: {
-          'fill-color': '#7c83ff',
-          'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.18, 0.05],
+          'fill-color': [
+            'case',
+            ['boolean', ['get', 'focused'], false],
+            '#d8c69e',
+            '#e6dcc1',
+          ],
+          'fill-opacity': [
+            'case',
+            ['boolean', ['get', 'focused'], false], 0.55,
+            ['boolean', ['feature-state', 'hover'], false], 0.40,
+            0.10,
+          ],
         },
       });
 
@@ -167,9 +188,40 @@
         type: 'line',
         source: 'lad',
         paint: {
-          'line-color': '#7c83ff',
-          'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 1.8, 0.7],
-          'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.95, 0.45],
+          'line-color': '#1a1815',
+          'line-width': [
+            'case',
+            ['boolean', ['get', 'focused'], false], 2.0,
+            ['boolean', ['feature-state', 'hover'], false], 1.4,
+            0.9,
+          ],
+          'line-opacity': [
+            'case',
+            ['boolean', ['get', 'focused'], false], 0.95,
+            ['boolean', ['feature-state', 'hover'], false], 0.85,
+            0.55,
+          ],
+        },
+      });
+
+      // LAD name labels (small italic serif, à la editorial map captions).
+      map.addLayer({
+        id: 'lad-label',
+        type: 'symbol',
+        source: 'lad',
+        layout: {
+          'text-field': ['get', 'LAD24NM'],
+          'text-font': ['Open Sans Italic', 'Arial Unicode MS Italic'],
+          'text-size': 10,
+          'text-letter-spacing': 0.05,
+          'text-transform': 'uppercase',
+          'text-allow-overlap': false,
+          'text-padding': 2,
+        },
+        paint: {
+          'text-color': '#5b5346',
+          'text-halo-color': '#efe7d2',
+          'text-halo-width': 1.5,
         },
       });
 
@@ -244,7 +296,7 @@
   {#if flowBundle}
     {#each TARGET_LAYOUT as [type, fx, fy]}
       {@const meta = flowBundle.flow_meta[type]}
-      {@const amount = displayAmounts ? displayAmounts[type] : flowTotal(flowBundle, FLOW_AMOUNT_KEY[type])}
+      {@const amount = displayAmounts ? displayAmounts[type] : 0}
       {@const color = FLOW_COLORS_HEX[type]}
       {@const dimmed = amount === 0}
       <button
@@ -260,7 +312,11 @@
         onmouseleave={() => hoveredTarget = null}
         aria-label="Explore {meta?.label ?? type} flow details"
       >
-        <div class="target-dot"></div>
+        <span class="target-mark"
+          class:mark-measured={meta?.confidence === 'measured'}
+          class:mark-estimated={meta?.confidence === 'estimated'}
+          class:mark-modelled={meta?.confidence === 'modelled'}
+        ></span>
         <div class="target-body">
           <span class="target-label">{meta?.label ?? type}</span>
           <span class="target-amount">
@@ -294,6 +350,7 @@
   .map {
     width: 100%;
     height: 100%;
+    background: var(--paper);
   }
 
   .particle-layer {
@@ -317,40 +374,59 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 0.3rem;
-    border-radius: 4px;
+    padding: 0.3rem 0.45rem;
+    border-radius: 2px;
     transition: background 0.15s;
   }
 
   .target-node:hover,
   .target-node.target-hovered {
-    background: rgba(124, 131, 255, 0.06);
+    background: rgba(26, 24, 21, 0.06);
   }
 
   .target-dimmed {
-    opacity: 0.25;
-    filter: grayscale(0.6);
+    opacity: 0.3;
     pointer-events: none;
   }
 
-  /* Right-side nodes: dot on right, text on left */
+  /* Right-side nodes: mark on right, text on left */
   .target-right {
     flex-direction: row-reverse;
   }
 
-  /* Left-side and center nodes: dot on left, text on right */
+  /* Left-side and center nodes: mark on left, text on right */
   .target-left,
   .target-center {
     flex-direction: row;
   }
 
-  .target-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--c);
-    box-shadow: 0 0 8px 3px var(--c);
+  /* Confidence-by-shape marks (Rule II from System reference) */
+  .target-mark {
+    width: 9px;
+    height: 9px;
     flex-shrink: 0;
+    display: inline-block;
+    position: relative;
+  }
+  .mark-measured {
+    background: var(--c);
+    border-radius: 50%;
+  }
+  .mark-estimated {
+    background: transparent;
+    border: 1.5px solid var(--c);
+    border-radius: 50%;
+  }
+  .mark-modelled {
+    background: transparent;
+    height: 2px;
+    width: 12px;
+    align-self: center;
+    background-image: repeating-linear-gradient(
+      to right,
+      var(--c) 0 3px,
+      transparent 3px 6px
+    );
   }
 
   .target-body {
@@ -369,28 +445,31 @@
   }
 
   .target-label {
-    font-size: 0.6875rem;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.625rem;
     font-weight: 600;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--c);
-    opacity: 0.9;
     line-height: 1.1;
   }
 
   .target-amount {
-    font-size: 0.875rem;
-    font-weight: 700;
-    color: #e8e8f0;
+    font-family: 'EB Garamond', Georgia, serif;
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--ink);
     letter-spacing: -0.01em;
-    line-height: 1.1;
+    line-height: 1.05;
   }
 
   .target-period {
-    font-size: 0.6875rem;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.625rem;
     font-weight: 400;
-    color: #505068;
-    margin-left: 0.1rem;
+    color: var(--ink-mute);
+    margin-left: 0.15rem;
+    letter-spacing: 0.02em;
   }
 
   /* ── Tooltip ── */
@@ -399,23 +478,25 @@
     top: 0;
     left: 0;
     pointer-events: none;
-    background: rgba(8, 8, 18, 0.92);
-    border: 1px solid rgba(124, 131, 255, 0.45);
-    color: #e8e8f0;
-    padding: 0.35rem 0.75rem;
-    border-radius: 4px;
-    font-size: 0.8125rem;
+    background: var(--paper);
+    border: 1px solid var(--ink);
+    color: var(--ink);
+    padding: 0.4rem 0.7rem;
+    font-size: 0.75rem;
     white-space: nowrap;
-    backdrop-filter: blur(6px);
     letter-spacing: 0.01em;
     will-change: transform;
     display: flex;
     flex-direction: column;
     gap: 0.1rem;
+    box-shadow: 1px 1px 0 var(--ink);
   }
 
   .tooltip-name {
-    font-weight: 600;
+    font-family: 'EB Garamond', Georgia, serif;
+    font-style: italic;
+    font-weight: 500;
+    font-size: 0.95rem;
   }
 
   .target-center {
@@ -423,8 +504,22 @@
   }
 
   .tooltip-payroll {
-    font-size: 0.75rem;
-    font-weight: 400;
-    color: rgba(124, 131, 255, 0.9);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  :global(.maplibregl-ctrl-attrib) {
+    background: rgba(239, 231, 210, 0.85) !important;
+    color: #7d735e !important;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.625rem;
+  }
+
+  :global(.maplibregl-ctrl-attrib a) {
+    color: #5b5346 !important;
   }
 </style>
